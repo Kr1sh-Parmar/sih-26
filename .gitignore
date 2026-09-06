@@ -13,3 +13,6 @@ models/
 __pycache__/
 .venv/
 data/processed/
+
+# runtime state (sqlite db, dev salt)
+var/

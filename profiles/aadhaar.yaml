@@ -1,0 +1,40 @@
+# Aadhaar. The real Secure QR is signed by UIDAI, which we deliberately do not
+# touch (D1). Here it is treated exactly like the other five and signed by our
+# reference issuer. The genuine arithmetic anchor is Verhoeff on the 12 digits.
+doc_type: aadhaar
+
+extract:
+  detector_classes: [person_photo, qr_code, name, father_name, dob, gender, address,
+                     id_number, secondary_id, issuing_authority, emblem, logo,
+                     hologram, doc_title]
+  forbidden_classes: [mrz, blood_group, nationality]
+  ocr_lang: [en, hi]
+
+verify:
+  signature: reference_issuer
+  arithmetic: [verhoeff_aadhaar, date_order, age_consistency]
+  cross_document: [name, dob, gender]
+
+tamper:
+  track: full
+  checks: [layout_geometry, guilloche, ghost_portrait, halftone, font_consistency]
+
+face:
+  source_class: person_photo
+  threshold_set: doc_live
+
+hard_fail:
+  - validation.verhoeff.aadhaar
+  - validation.watchlist.hit
+  - validation.signature.valid
+  - validation.crossdoc.dob_mismatch
+
+weights:
+  validation.signature.valid:   0.30
+  validation.verhoeff.aadhaar:  0.25
+  face.match.cosine:            0.15
+  tamper.*:                     0.15
+  validation.*:                 0.10
+  extraction.*:                 0.05
+
+disclosure: "Signature verified against our reference issuer, for demonstration. We hold no government keys."

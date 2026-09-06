@@ -1,0 +1,14 @@
+# Verdict bands and the coverage floor (context/CONTRACTS.md §6).
+# Operator-tunable — the checkpoint commander sets these, not us.
+bands:
+  green_below: 0.20     # < 0.20  GREEN  clear
+  amber_below: 0.60     # < 0.60  AMBER  secondary inspection
+                        # >= 0.60 RED    detain / manual review
+
+# Below this weighted coverage the verdict is AMBER "re-capture required",
+# never GREEN. inconclusive is not pass (D9). This is a two-line safety
+# property and it is on the never-cut list.
+coverage_floor: 0.70
+
+messages:
+  low_coverage: "Insufficient evidence - re-capture required"

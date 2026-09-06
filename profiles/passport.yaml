@@ -1,0 +1,44 @@
+# Indian passport, ICAO TD3. The only document here with a genuine external
+# integrity mechanism we can verify without permission from anyone (ICAO 9303).
+doc_type: passport
+
+extract:
+  detector_classes: [mrz, person_photo, ghost_photo, name, father_name, dob, gender,
+                     nationality, id_number, issue_date, expiry_date,
+                     issuing_authority, signature, emblem, doc_title, qr_code]
+  forbidden_classes: []
+  ocr_lang: [en]
+  mrz: { format: TD3, lines: 2, length: 44 }
+
+verify:
+  signature: reference_issuer
+  arithmetic: [mrz_checkdigits, date_order, validity_period, age_consistency]
+  cross_document: [name, dob, gender]
+
+tamper:
+  track: full
+  checks: [ocrb_conformance, guilloche, ghost_portrait, layout_geometry, halftone,
+           stamp_duplicate, stamp_date_logic]
+
+face:
+  source_class: person_photo
+  threshold_set: doc_live
+
+hard_fail:
+  - validation.mrz.checkdigit.composite
+  - validation.expiry.expired
+  - validation.watchlist.hit
+  - validation.signature.valid
+  - validation.crossdoc.dob_mismatch
+  - validation.vizmrz.dob_mismatch
+
+weights:
+  validation.signature.valid:   0.25
+  validation.mrz.checkdigit.*:  0.25
+  validation.vizmrz.*:          0.25
+  face.match.cosine:            0.15
+  tamper.*:                     0.10
+  validation.*:                 0.10
+  extraction.*:                 0.05
+
+disclosure: "Signature verified against our reference issuer, for demonstration. We hold no government keys."

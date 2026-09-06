@@ -1,0 +1,40 @@
+# Driving licence. Native anchor is the state code plus RTO office number in the
+# licence number, checked against a local table. Weakest of the six.
+doc_type: dl
+
+extract:
+  detector_classes: [person_photo, signature, name, father_name, dob, address,
+                     id_number, issue_date, expiry_date, issuing_authority,
+                     blood_group, emblem, doc_title, qr_code, barcode]
+  forbidden_classes: [mrz, nationality]
+  ocr_lang: [en, hi]
+
+verify:
+  signature: reference_issuer
+  arithmetic: [dl_state_rto, date_order, validity_period, age_consistency]
+  cross_document: [name, dob, father_name]
+
+tamper:
+  track: partial
+  checks: [layout_geometry, font_consistency, copy_move]
+
+face:
+  source_class: person_photo
+  threshold_set: doc_live
+
+hard_fail:
+  - validation.expiry.expired
+  - validation.watchlist.hit
+  - validation.signature.valid
+  - validation.crossdoc.dob_mismatch
+
+weights:
+  validation.crossdoc.*:            0.30
+  validation.format.dl.id_number:   0.20
+  validation.expiry.expired:        0.15
+  face.match.cosine:                0.15
+  tamper.*:                         0.10
+  validation.*:                     0.05
+  extraction.*:                     0.05
+
+disclosure: "Signature verified against reference issuer (demonstration)"

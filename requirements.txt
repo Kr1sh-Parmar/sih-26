@@ -1,0 +1,16 @@
+# Python 3.11 in the image. CPU only - no onnxruntime-gpu, no torch CUDA extras.
+# Nothing here reaches the network at inference time.
+
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9      # multipart form parsing for POST /screen
+pyyaml==6.0.1
+numpy>=1.26,<3
+opencv-python-headless==4.10.0.84
+cryptography>=42,<46         # Ed25519 sign and verify
+segno==1.6.6                 # QR encoding, issuer side, pure python
+pyzbar==0.1.9                # QR decoding, screening side. Needs libzbar0 on Debian.
+
+# tests
+pytest>=8
+httpx>=0.27                  # fastapi TestClient

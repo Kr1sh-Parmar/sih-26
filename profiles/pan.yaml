@@ -1,0 +1,40 @@
+# PAN. No cryptographic integrity exists in reality - this is the document that
+# makes the point (CONTEXT.md section 5). It has no check digit either - see
+# DECISIONS.md D23 - so its only native anchor is structural, which is why
+# cross-document propagation matters more here than anywhere else.
+doc_type: pan
+
+extract:
+  detector_classes: [person_photo, signature, name, father_name, dob, id_number,
+                     issuing_authority, emblem, doc_title, qr_code]
+  forbidden_classes: [mrz, blood_group, nationality, address]
+  ocr_lang: [en]
+
+verify:
+  signature: reference_issuer
+  arithmetic: [pan_format, date_order]
+  cross_document: [name, dob, father_name]
+
+tamper:
+  track: partial
+  checks: [layout_geometry, font_consistency, copy_move]
+
+face:
+  source_class: person_photo
+  threshold_set: doc_live
+
+hard_fail:
+  - validation.watchlist.hit
+  - validation.signature.valid
+  - validation.crossdoc.dob_mismatch
+  - validation.crossdoc.name_mismatch
+
+weights:
+  validation.crossdoc.*:              0.35
+  validation.format.pan.id_number:    0.20
+  face.match.cosine:                  0.15
+  tamper.*:                           0.15
+  validation.*:                       0.10
+  extraction.*:                       0.05
+
+disclosure: "Signature verified against reference issuer (demonstration)"

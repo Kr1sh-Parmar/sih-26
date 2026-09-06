@@ -1,0 +1,77 @@
+# How much each technique is actually worth, 0-1. Used by fusion's noisy-OR
+# (context/CONTRACTS.md §3). Every line here must be defensible out loud —
+# a judge can and will ask why ELA is 0.30 and a check digit is 1.00.
+#
+# Rule of thumb:
+#   1.00  mathematically certain given a trusted key, or a closed-form checksum
+#   0.90  deterministic comparison of two independently printed values
+#   0.70  classical forensics with a checkable artefact (keypoint matches)
+#   0.50  statistical inference over image regions
+#   0.30  fragile — survives only if nothing recompressed the file
+
+# --- extraction ------------------------------------------------------------
+extraction.quality.blur:                 0.80
+extraction.quality.resolution:           1.00
+extraction.doctype.confidence:           0.70
+extraction.vlm.ratified:                 0.60
+extraction.vlm.unratified:               0.20
+
+# --- validation: cryptographic and arithmetic ------------------------------
+validation.signature.valid:              1.00
+validation.signature.issuer_trusted:     1.00
+validation.mrz.checkdigit.composite:     1.00
+validation.mrz.checkdigit.document_number: 1.00
+validation.mrz.checkdigit.dob:           1.00
+validation.mrz.checkdigit.expiry:        1.00
+validation.mrz.checkdigit.optional:      1.00
+validation.verhoeff.aadhaar:             1.00
+validation.crossfield.date_order:        1.00
+validation.crossfield.validity_period:   0.80
+validation.expiry.expired:               1.00
+validation.watchlist.hit:                0.85   # name matching is the weak link, not the lookup
+
+# VIZ<->MRZ: two independently printed copies of the same value disagreeing.
+# Not 1.00 because OCR read one of them.
+validation.vizmrz.dob_mismatch:          0.90
+validation.vizmrz.name_mismatch:         0.90
+validation.vizmrz.gender_mismatch:       0.90
+validation.vizmrz.expiry_date_mismatch:  0.90
+validation.vizmrz.id_number_mismatch:    0.90
+validation.vizmrz.nationality_mismatch:  0.85
+
+# Cross-document: same reasoning, but one side is cryptographically proven.
+validation.crossdoc.dob_mismatch:        0.90
+validation.crossdoc.name_mismatch:       0.90
+
+validation.history.impossible_transit:   0.40   # needs deployment history to mean anything
+
+# --- tamper: physical ------------------------------------------------------
+tamper.physical.ocrb_conformance:        0.65
+tamper.physical.guilloche_break:         0.45
+tamper.physical.ghost_missing:           0.55
+tamper.physical.layout_geometry:         0.60
+tamper.physical.halftone:                0.50
+tamper.stamp.duplicate:                  0.75   # pixel-identical stamps are copy-pasted
+tamper.stamp.date_logic:                 0.80
+tamper.stamp.count_mismatch:             0.50
+
+# --- tamper: digital (uploads only) ---------------------------------------
+tamper.digital.copy_move:                0.70
+tamper.digital.exif_software:            0.75   # high when present, absent proves nothing
+tamper.digital.double_jpeg:              0.50
+tamper.digital.noise_residual:           0.50
+tamper.digital.ela:                      0.30   # visualisation, not a verdict — see D15
+
+# --- face ------------------------------------------------------------------
+face.doc.detected:                       0.90
+face.doc.quality:                        0.70
+face.live.detected:                      0.90
+face.live.quality:                       0.70
+face.liveness.passive:                   0.65
+face.liveness.active:                    0.80
+face.match.cosine:                       0.75
+face.gallery.duplicate:                  0.60
+
+# Fallback for any registered id not listed above. Deliberately mid-range:
+# a forgotten weight should be visible in the score, not silently zero.
+_default:                                0.50
