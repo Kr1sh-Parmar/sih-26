@@ -253,3 +253,36 @@ trust propagation (D19) carries so much weight on a PAN.
 The passport MRZ has five, from ICAO 9303, and we verify all of them. PAN,
 Voter ID and the driving licence have published structure but no checksum — so
 for those we verify structure, and lean on the signed document beside them."
+
+---
+
+## D24 — RapidOCR (PP-OCR on ONNX), not PaddleOCR
+
+**Rejected:** PaddleOCR, as named in `TECHNICAL-SPEC.md` §4.
+
+**Why:** the models are the same — PP-OCRv4 detection, angle classification and
+recognition. The difference is the runtime. PaddleOCR brings `paddlepaddle`, a
+second inference engine alongside ONNX Runtime, which sits badly against
+CLAUDE.md rule 2: *every model is ONNX Runtime on CPU*. Two runtimes means two
+sets of threading knobs, two memory pools and two things to prove offline.
+
+RapidOCR ships the same PP-OCRv4 weights already exported to ONNX and runs them
+on the `onnxruntime` we load everything else with. **The three model files ship
+inside the wheel (16 MB)**, so nothing is fetched on first use — which matters
+more than it sounds: PaddleOCR downloads its models on first call, and a model
+fetch you forgot about surfaces exactly when the network cable comes out.
+
+**What it costs:** Hindi. The bundled recogniser is `ch_PP-OCRv4_rec_infer.onnx`
+— Chinese and English. The `aadhaar`, `voter_id` and `dl` profiles declare
+`ocr_lang: [en, hi]`, and today only the `en` half of that is true.
+
+Devanagari needs PP-OCR's `devanagari` recognition model and its character
+dictionary, fetched at **build time** into `models/` and passed to RapidOCR by
+config. That is a download and a licence check, not a code change, and it is
+tracked rather than quietly ignored — an Aadhaar whose name is printed only in
+Devanagari currently reads as `inconclusive`, which is honest but is not
+coverage.
+
+**Statable as:** "Same PP-OCRv4 models the paper describes, run on ONNX Runtime
+so the whole system has one inference engine. Hindi recognition is a second
+model file we have not yet added."

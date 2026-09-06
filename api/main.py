@@ -23,6 +23,7 @@ from fastapi.responses import Response
 
 from api import router as pipeline
 from api import websocket as ws
+from core import registry
 from core.decode import DecodeError
 from core.profiles import DOC_TYPES, ProfileError, load_config, load_profile
 from core.store import DEFAULT_DB, Store
@@ -58,8 +59,11 @@ async def lifespan(app: FastAPI):
         load_profile(doc_type)
     for name in ("reliability", "bands", "thresholds"):
         load_config(name)
-    # ONNX sessions would be created here. core/registry.py owns that when the
-    # models land; nothing is loaded lazily inside a handler.
+    # Every ONNX session is built here, once. Never inside a handler: a cold
+    # session on the first document is a latency spike at exactly the moment
+    # someone is watching. `warm()` also does one throwaway inference so graph
+    # optimisation is paid for before the first traveller, not during.
+    state["models"] = registry.warm()
     yield
     state["store"].close()
 
@@ -80,7 +84,9 @@ def health() -> dict:
         "doc_types": list(DOC_TYPES),
         "trust_anchors": len(state["anchors"]),
         "watchlist": state["store"].watchlist_size(),
-        "models": pipeline.MODEL_VERSIONS,
+        "models": pipeline.model_versions(),
+        "loaded": state["models"]["loaded"],
+        "missing": state["models"]["missing"],
     }
 
 

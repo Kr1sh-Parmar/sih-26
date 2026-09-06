@@ -32,16 +32,16 @@ from modules.validation import layer_a, layer_d
 #: frontend/src/contracts/events.ts - the reducer switches on these exact strings.
 PHASES = ("decoding", "tier1", "gate", "tier2", "fusing", "done")
 
-MODEL_VERSIONS = {
-    # Nothing learned is deployed yet. Recorded anyway, because a screening
-    # event has to say which models produced it or it cannot be re-scored
-    # honestly later.
-    "field_detector": None,
-    "ocr": None,
-    "face_embedding": None,
-    "liveness": None,
-    "pipeline": "spine-1",
-}
+def model_versions() -> dict:
+    """What actually ran, read live from the registry.
+
+    This was a static dict reporting `None` forever, which is worse than
+    useless in an audit log: it would keep claiming no detector was deployed
+    long after one was, so a historical case could not be honestly re-scored.
+    `None` now means genuinely absent.
+    """
+    from core import registry
+    return registry.versions()
 
 
 @dataclass
@@ -180,7 +180,7 @@ def persist(result: Result, store, officer_id: str | None = None) -> str:
         score=result.verdict.score,
         coverage=result.verdict.coverage,
         signals=result.signals,
-        model_versions=MODEL_VERSIONS,
+        model_versions=model_versions(),
         id_number=number.value if number else None,
         officer_id=officer_id,
     )

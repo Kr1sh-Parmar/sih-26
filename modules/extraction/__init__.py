@@ -1,22 +1,33 @@
-"""Extraction. Quality gate and QR are real; the detector, OCR and the VLM
-fallback are stubs.
+"""Extraction. Quality gate, QR, field detection and OCR.
 
-What works today, with no model at all: the capture quality gate, and the
-signed payload carried in a QR. That is enough to run the whole cryptographic
-and cross-document path end to end - which is the headline demo - because the
-signature covers the field values themselves.
+The order matters and is not arbitrary:
 
-What does not work yet is reading the printed page. Until the field detector
-and OCR land, a document with no QR yields no fields, its checks come back
-`inconclusive`, and the coverage floor turns the verdict AMBER. That is the
-system behaving correctly, not a gap being papered over.
+    quality -> QR envelope -> detect -> OCR crops -> normalise
+                                          |
+                       caller then seeds the verified signed payload
+
+OCR reads the card first; the orchestrator seeds the signed payload afterwards,
+and `seed_from_payload` declines to overwrite anything OCR or the MRZ produced.
+A signed value is proven and an OCR read is only a guess at the same ink - but
+the printed value is the thing that has to survive in order to disagree. See
+`seed_from_payload`, which is where that nearly went wrong.
+
+When the detector weights are absent - a normal state, the repository ships
+without them until they are trained - every declared text field falls back to
+an `inconclusive` signal. The coverage floor then turns the verdict AMBER:
+nothing was read, so nothing disagreed, and that must not be a pass (D9).
+
+The VLM fallback (Florence-2) is still a stub.
 """
 import time
 
 from core.canonical import FIELD_ORDER
+from core.profiles import field_label
 from core.quality import check as quality_check
+from core.registry import FIELD_DETECTOR, available
 from fusion.context import NormalizedField, ScreeningContext
 from fusion.signal import Signal
+from modules.extraction import detect, ocr
 from modules.extraction import normalize as N
 from modules.extraction import qr
 
@@ -55,14 +66,28 @@ def normalise_field(name: str, raw: str, source: str, confidence: float,
 
 
 def seed_from_payload(ctx: ScreeningContext, payload: dict) -> list[str]:
-    """Populate ctx.fields from a verified signed payload.
+    """Fill ctx.fields from a verified signed payload, without clobbering OCR.
 
     Source is `qr`, and these values are proven by the signature - which is why
     fusion is allowed to suppress probabilistic disputes about them.
+
+    **It must not overwrite a field OCR actually read off the card.** That is
+    not a preference, it is the whole VIZ/MRZ premise. A forger alters the
+    printed date of birth and leaves the signed payload and the MRZ alone; if
+    the signed value replaced the printed one in ctx.fields, Layer C would then
+    compare the signature against the MRZ - two things that of course agree -
+    and the alteration would be invisible. The printed value has to survive to
+    be the thing that disagrees.
+
+    The signed payload is not lost: it stays in ctx.fields["signed_payload"],
+    and Layer D reads it from the verification result rather than from here.
     """
     seeded = []
     for name in FIELD_ORDER:
         if name in ("doc_type",) or not payload.get(name):
+            continue
+        existing = ctx.fields.get(name)
+        if existing is not None and existing.source in ("ocr", "mrz"):
             continue
         field = normalise_field(name, payload[name], "qr", 1.0)
         if field:
@@ -83,6 +108,13 @@ def run(ctx: ScreeningContext, *, uploaded: bool = False,
         ctx.fields["signed_payload"] = NormalizedField(
             raw=payload, value="", source="qr", confidence=1.0
         )
+
+    # OCR runs before the caller seeds the signed payload, so the printed value
+    # lands first and `seed_from_payload` then declines to overwrite it. Reading
+    # the card is the point; the signature is the thing it gets checked against.
+    signals += detect.run(ctx)
+    if ctx.field_boxes:
+        signals += ocr.run(ctx)
 
     signals += _unread_fields(ctx)
     return signals
@@ -108,24 +140,32 @@ def _doctype(ctx: ScreeningContext, declared: bool) -> list[Signal]:
 
 
 def _unread_fields(ctx: ScreeningContext) -> list[Signal]:
-    """One signal per declared text field we could not read.
+    """One signal per declared text field that was never located.
 
     These land in the officer console as "could not evaluate X", which is the
     difference between an honest AMBER and a black box.
+
+    A field that *was* located but could not be read is OCR's to report, under
+    `extraction.ocr.<name>.confidence`. Reporting it here as well would charge
+    coverage twice for one problem and show the officer the same gap in two
+    places - the same mistake as summing correlated signals (D8).
     """
     started = time.perf_counter()
+    deployed = available(FIELD_DETECTOR)
     declared = [c for c in ctx.profile["extract"]["detector_classes"]
                 if c in TEXT_CLASSES]
+    why = ("could not be located on this document" if deployed else
+           "could not be read - the field detector is not yet deployed")
+
     out = []
     for name in declared:
-        if name in ctx.fields:
+        if name in ctx.fields or name in ctx.field_boxes:
             continue
         out.append(Signal(
             id=f"extraction.field.{name}.confidence", module="extraction", tier=1,
             verdict="inconclusive", confidence=0.0, trust_class="probabilistic",
             hard_fail=False, anchor=f"field:{name}",
-            evidence=f"The {name.replace('_', ' ')} could not be read - the field "
-                     f"detector and OCR are not yet deployed",
+            evidence=f"The {field_label(name)} {why}",
             latency_ms=int((time.perf_counter() - started) * 1000),
         ))
     return out

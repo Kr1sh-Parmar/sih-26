@@ -16,3 +16,12 @@ data/processed/
 
 # runtime state (sqlite db, dev salt)
 var/
+
+# build-time training environment (CUDA torch, ultralytics). Never used at inference.
+.venv-train/
+runs/
+
+# ultralytics drops pretrained starting weights and AMP-check models into cwd.
+# Build-time downloads, not source. The shipped detector lives in models/.
+*.pt
+weights/
