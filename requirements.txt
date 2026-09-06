@@ -1,0 +1,26 @@
+# Python 3.11 in the image. CPU only - no onnxruntime-gpu, no torch CUDA extras.
+# Nothing here reaches the network at inference time.
+
+fastapi>=0.115.2,<0.116     # <0.115.2 ships a starlette whose TestClient breaks on httpx 0.28
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9      # multipart form parsing for POST /screen
+pyyaml==6.0.1
+numpy>=1.26,<3
+opencv-python-headless==4.11.0.86   # matches the dev env; 4.13 requires numpy>=2
+cryptography>=42,<46         # Ed25519 sign and verify
+segno==1.6.6                 # QR encoding, issuer side, pure python
+pyzbar==0.1.9                # QR decoding, screening side. Needs libzbar0 on Debian.
+
+# Field OCR. RapidOCR is PP-OCRv4 (the models TECHNICAL-SPEC.md section 4 names)
+# exported to ONNX, so it runs on onnxruntime rather than pulling paddlepaddle
+# in as a second inference runtime. Its three models ship inside the wheel,
+# 16 MB, so nothing is fetched at runtime. See DECISIONS.md D24.
+onnxruntime>=1.18,<2         # 1.17 predates the Windows 11 support check and unstructured-inference's floor
+rapidocr_onnxruntime>=1.3,<2
+
+# Training deps (ultralytics, CUDA torch) are NOT here. They live in
+# .venv-train and never enter this process - see data/tools/train_fields.py.
+
+# tests
+pytest>=8
+httpx>=0.28,<1               # fastapi TestClient

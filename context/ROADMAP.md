@@ -64,7 +64,7 @@ The whole system minus the models. Everything here is arithmetic and needs no tr
 - [ ] Ed25519 reference issuer: canonicalise → SHA-256 → sign → QR encode
 - [ ] `TrustAnchorStore` keyed by issuer ID
 - [ ] Signature verifier
-- [ ] Layer A: Verhoeff, PAN check char, EPIC format, DL state/RTO
+- [ ] Layer A: Verhoeff, PAN structure, EPIC format, DL state/RTO
 - [ ] Layer B: ISO 3166 codes, field lengths, charsets, date formats
 - [ ] Layer C: date ordering, validity period, age consistency
 

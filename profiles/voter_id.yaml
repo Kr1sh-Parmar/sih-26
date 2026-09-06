@@ -1,0 +1,37 @@
+# Voter ID (EPIC). Format-only native anchor: three letters then seven digits.
+doc_type: voter_id
+
+extract:
+  detector_classes: [person_photo, name, father_name, dob, gender, address,
+                     id_number, issue_date, issuing_authority, emblem, logo,
+                     doc_title, qr_code, barcode]
+  forbidden_classes: [mrz, blood_group, nationality]
+  ocr_lang: [en, hi]
+
+verify:
+  signature: reference_issuer
+  arithmetic: [epic_format, date_order, age_consistency]
+  cross_document: [name, dob, gender, father_name]
+
+tamper:
+  track: partial
+  checks: [layout_geometry, font_consistency, copy_move]
+
+face:
+  source_class: person_photo
+  threshold_set: doc_live
+
+hard_fail:
+  - validation.watchlist.hit
+  - validation.signature.valid
+  - validation.crossdoc.dob_mismatch
+
+weights:
+  validation.crossdoc.*:                 0.30
+  validation.format.voter_id.id_number:  0.20
+  face.match.cosine:                     0.15
+  tamper.*:                              0.15
+  validation.*:                          0.15
+  extraction.*:                          0.05
+
+disclosure: "Signature verified against reference issuer (demonstration)"

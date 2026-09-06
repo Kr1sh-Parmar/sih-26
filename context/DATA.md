@@ -159,7 +159,7 @@ Load a real sanctions list rather than inventing one. It gives your watchlist re
 | Deliverable | How | Target |
 |---|---|---|
 | **Templates** | Vectorise official specimens into layers: guilloche background, static text, field slots, photo slot, QR slot | 6 types, ~1.5 days each |
-| **Synthetic identities** | Faker `en_IN`. **Verhoeff-valid** Aadhaar, format-valid PAN with correct check character, TD3 MRZ with correct check digits, EPIC and DL formats | 2,000 |
+| **Synthetic identities** | Faker `en_IN`. **Verhoeff-valid** Aadhaar, structurally valid PAN (holder-type character, fifth character matching the surname), TD3 MRZ with correct check digits, EPIC and DL formats | 2,000 |
 | **Synthetic faces** | Reuse MIDV-2020's artificially generated faces — zero PII exposure | 2,000 |
 | **Capture realism** | **Print the rendered templates, then scan and photograph** under varied lighting and angle | 3 captures each |
 | **Doc ↔ live face pairs** | Print a face onto a mock template, scan it, capture live webcam frames on **the demo webcam**. Include deliberate impostor pairs. | 30–50 people, ~500 pairs |

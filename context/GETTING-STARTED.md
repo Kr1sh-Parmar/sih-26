@@ -141,7 +141,7 @@ All fake. But every person now has a fixed target and can work without blocking 
 
 **Extraction:** implement the MRZ parser. Pure function, no models, testable against ICAO 9303 published examples. It is the highest-value component in the system and needs nothing but a string.
 
-**Validation:** implement Verhoeff and the PAN check character. Twenty lines each, fully testable, and they are your Layer A backbone.
+**Validation:** implement Verhoeff, then the PAN structural rules. Twenty lines each, fully testable, and they are your Layer A backbone. The two are not equivalent: Aadhaar has a real, published check digit; PAN has published composition rules and nothing more. See `DECISIONS.md` D23 before you describe either one out loud.
 
 **Tampering:** vectorise the passport template. Slow, unglamorous, blocks everything downstream in Module 3.
 

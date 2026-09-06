@@ -52,7 +52,7 @@ quality gate → segmentation + quad warp → type classify
 
 | Layer | Content | Trust class |
 |---|---|---|
-| A | Ed25519 signature; MRZ check digits; Verhoeff; PAN check char; EPIC; DL state+RTO | crypto / arithmetic |
+| A | Ed25519 signature; MRZ check digits; Verhoeff; PAN structure; EPIC format; DL state+RTO | crypto / arithmetic |
 | B | Field lengths, charsets, ISO 3166, gender codes, date formats | arithmetic |
 | C | Date ordering, validity period, age consistency, **VIZ↔MRZ agreement** | arithmetic |
 | D | Cross-document trust propagation | crypto when one side is signed |

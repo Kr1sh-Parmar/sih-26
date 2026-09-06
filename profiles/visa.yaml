@@ -1,0 +1,43 @@
+# Visa sticker, ICAO MRV-A/MRV-B where an MRZ is present. Stamps live here,
+# which is why stamp date logic carries real weight on this profile alone.
+doc_type: visa
+
+extract:
+  detector_classes: [mrz, person_photo, name, dob, gender, nationality, id_number,
+                     issue_date, expiry_date, issuing_authority, doc_title, qr_code]
+  forbidden_classes: [blood_group, father_name]
+  ocr_lang: [en]
+  mrz: { format: MRVA, lines: 2, length: 44 }
+
+verify:
+  signature: reference_issuer
+  arithmetic: [mrz_checkdigits, date_order, validity_period]
+  cross_document: [name, dob]
+
+tamper:
+  track: partial
+  checks: [layout_geometry, font_consistency, copy_move,
+           stamp_duplicate, stamp_date_logic, stamp_count]
+
+face:
+  source_class: person_photo
+  threshold_set: doc_live
+
+hard_fail:
+  - validation.mrz.checkdigit.composite
+  - validation.expiry.expired
+  - validation.watchlist.hit
+  - validation.signature.valid
+  - validation.crossdoc.dob_mismatch
+
+weights:
+  validation.signature.valid:   0.25
+  validation.mrz.checkdigit.*:  0.20
+  validation.vizmrz.*:          0.20
+  tamper.stamp.*:               0.15
+  face.match.cosine:            0.10
+  validation.*:                 0.10
+  tamper.*:                     0.05
+  extraction.*:                 0.05
+
+disclosure: "Signature verified against our reference issuer, for demonstration. We hold no government keys."

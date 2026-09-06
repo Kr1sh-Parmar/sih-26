@@ -26,7 +26,7 @@ That distinction is the core design idea. A conventional system flattens a signa
 | Indian Passport | Reference issuer | **MRZ check digits (ICAO 9303)** | Full |
 | Visa | Reference issuer | MRV MRZ digits where present | Partial |
 | Aadhaar | Reference issuer | Verhoeff (12-digit) | Full |
-| PAN | Reference issuer | Format + check character | Partial |
+| PAN | Reference issuer | Format + structural rules | Partial |
 | Voter ID (EPIC) | Reference issuer | EPIC format | Partial |
 | Driving Licence | Reference issuer | State + RTO code | Partial |
 
@@ -78,8 +78,31 @@ Plus **live face capture** for 1:1 verification and 1:N duplicate-identity searc
 ## Quick start
 
 ```bash
-docker compose up          # brings up API, Postgres+pgvector, MinIO
-open http://localhost:5173 # officer console
+pip install -r requirements.txt
+python -m issuer.cli init                        # reference keypair -> trust anchor store
+python data/tools/load_watchlist.py --seed-demo  # OFAC + UN into the local table
+python -m uvicorn api.main:app                   # http://localhost:8000
+cd frontend && npm install && npm run dev        # http://localhost:5173
 ```
 
-Models are baked into the image. No downloads at runtime.
+`pytest` should pass from a clean checkout. On Debian-based images the QR
+decoder needs `apt-get install -y libzbar0`.
+
+Nothing above touches the network at inspection time, and no model is
+downloaded at runtime.
+
+### What is built so far
+
+The deterministic spine: contracts, profiles, fusion, the risk gate, the
+FastAPI + WebSocket server, the Ed25519 reference issuer, and validation
+layers A to F. Everything that needs no trained model.
+
+The learned modules - field detector, OCR, face, both tamper tracks - are
+signature-correct stubs that return `inconclusive`. That is deliberate and it
+is why an unsigned document screens AMBER today: coverage, not evidence, is
+what is missing, and the system says so rather than clearing it.
+
+```bash
+python -m issuer.cli mint var/demo/aadhaar.json  # sign a payload, write its QR
+python scripts/demo_scene3.py                    # Scene 3 against a running server
+```

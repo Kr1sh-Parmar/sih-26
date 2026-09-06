@@ -83,7 +83,7 @@ Everything in this system carries one of three labels. It determines how much we
 | Class | Meaning | Examples |
 |---|---|---|
 | **Cryptographic** | Mathematically certain given a trusted key | Ed25519 signature over canonical payload |
-| **Arithmetic** | Deterministic, no ML, no key needed | MRZ check digits, Verhoeff, PAN check character, date logic |
+| **Arithmetic** | Deterministic, no ML, no key needed | MRZ check digits, Verhoeff, PAN structural rules, date logic |
 | **Probabilistic** | Inference. Can be wrong. | Tamper heuristics, face match, OCR confidence |
 
 **Precedence rule:** when a cryptographic signal passes, probabilistic signals disputing the *signed fields* are suppressed. An ELA hotspot over a signed date of birth is a false positive, and fusion knows it.

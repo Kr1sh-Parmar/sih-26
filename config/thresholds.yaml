@@ -1,0 +1,29 @@
+# Operating points. Face thresholds are PLACEHOLDERS until the doc-vs-live
+# calibration set exists (ROADMAP.md, D11). Published buffalo_l/LFW thresholds
+# are live-to-live and are wrong in the direction that rejects genuine
+# travellers, so they are not used even as a starting point.
+
+quality:
+  # Document blur threshold is looser than live on purpose: printed photos are
+  # naturally softer than a camera capture (CLAUDE.md).
+  doc_blur_min: 180.0          # variance of Laplacian
+  live_blur_min: 260.0
+  min_short_edge_px: 600
+  brightness_min: 40
+  brightness_max: 215
+
+face:
+  doc_live:
+    threshold: 0.32            # TODO calibrate on >=500 doc-vs-live pairs, >=30 people
+    review_band: [0.26, 0.38]  # escalate to Tier 2 inside this band
+    calibrated: false          # flipped to true only by modules/face/calibrate.py
+  gallery:
+    threshold: 0.45            # stricter than 1:1 — many comparisons, not one
+    calibrated: false
+  liveness:
+    passive_pass: 0.60
+    uncertain_band: [0.40, 0.60]
+
+gate:
+  tamper_clear_below: 0.15
+  tamper_escalate_above: 0.25

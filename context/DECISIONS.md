@@ -211,3 +211,78 @@ This only works *because* six types are in scope. It is the headline demo.
 **Why:** real ID numbers in a database that gets screen-recorded, demoed, and possibly committed is a genuine exposure under the Aadhaar Act and DPDP Act. Generating tampered variants would mean producing altered images of real government IDs — awkward to display to an MHA panel regardless of intent.
 
 **The workable version:** real faces (consent), synthetic everything else. Team member's photo → synthetic identity with checksum-valid numbers → rendered onto a specimen template → printed, scanned, signed by the reference issuer. The face verification demo is unchanged; nothing is lost.
+
+---
+
+## D23 — PAN, EPIC and DL are structural checks, not check characters
+
+**Rejected:** implementing a "PAN check character" algorithm.
+
+**Why:** there isn't one to implement. The Income Tax Department publishes the
+composition of a PAN — five letters, four digits, one letter, with the fourth
+character encoding holder type and the fifth being the first letter of the
+surname — but it has never published a check-character algorithm, and the
+schemes circulating online are reverse-engineering folklore. The same is true
+of the EPIC number and the driving licence number.
+
+Earlier drafts of these documents said "PAN check character", and the Scene 3
+fixture claimed *"PAN check character F is correct for ABLPG7040"*. That was
+wrong, and it was wrong in the direction that overclaims certainty to a panel.
+
+**What we actually verify for PAN:**
+
+| Rule | Real? |
+|---|---|
+| `^[A-Z]{5}[0-9]{4}[A-Z]$` | published composition |
+| 4th character is a valid holder-type code (P, C, H, F, …) | published |
+| 5th character equals the first letter of the surname | published, and a genuine cross-field constraint |
+| a check character over the other nine | **does not exist** |
+
+The fifth-character rule is the one with teeth: it ties the number to the
+printed name, so a spliced name breaks it. It is still not a checksum.
+`check_pan("AAAPA0000A")` passes, and there is a test that asserts it does, so
+the ceiling is recorded rather than discovered on stage.
+
+**Consequence:** of the six documents, exactly two carry a real arithmetic
+anchor — the passport and visa MRZ check digits (ICAO 9303) and the Aadhaar
+Verhoeff digit. The other four have structure only. That is precisely the
+national gap described in `CONTEXT.md` §5, and it is the reason cross-document
+trust propagation (D19) carries so much weight on a PAN.
+
+**How to say it:** "Aadhaar has a real check digit, Verhoeff, and we verify it.
+The passport MRZ has five, from ICAO 9303, and we verify all of them. PAN,
+Voter ID and the driving licence have published structure but no checksum — so
+for those we verify structure, and lean on the signed document beside them."
+
+---
+
+## D24 — RapidOCR (PP-OCR on ONNX), not PaddleOCR
+
+**Rejected:** PaddleOCR, as named in `TECHNICAL-SPEC.md` §4.
+
+**Why:** the models are the same — PP-OCRv4 detection, angle classification and
+recognition. The difference is the runtime. PaddleOCR brings `paddlepaddle`, a
+second inference engine alongside ONNX Runtime, which sits badly against
+CLAUDE.md rule 2: *every model is ONNX Runtime on CPU*. Two runtimes means two
+sets of threading knobs, two memory pools and two things to prove offline.
+
+RapidOCR ships the same PP-OCRv4 weights already exported to ONNX and runs them
+on the `onnxruntime` we load everything else with. **The three model files ship
+inside the wheel (16 MB)**, so nothing is fetched on first use — which matters
+more than it sounds: PaddleOCR downloads its models on first call, and a model
+fetch you forgot about surfaces exactly when the network cable comes out.
+
+**What it costs:** Hindi. The bundled recogniser is `ch_PP-OCRv4_rec_infer.onnx`
+— Chinese and English. The `aadhaar`, `voter_id` and `dl` profiles declare
+`ocr_lang: [en, hi]`, and today only the `en` half of that is true.
+
+Devanagari needs PP-OCR's `devanagari` recognition model and its character
+dictionary, fetched at **build time** into `models/` and passed to RapidOCR by
+config. That is a download and a licence check, not a code change, and it is
+tracked rather than quietly ignored — an Aadhaar whose name is printed only in
+Devanagari currently reads as `inconclusive`, which is honest but is not
+coverage.
+
+**Statable as:** "Same PP-OCRv4 models the paper describes, run on ONNX Runtime
+so the whole system has one inference engine. Hindi recognition is a second
+model file we have not yet added."
