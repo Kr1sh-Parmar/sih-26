@@ -1,0 +1,796 @@
+{
+  "meta": {
+    "scene": "1 \u2014 the clean pass",
+    "doc_type": "passport",
+    "canvas": [
+      1654,
+      1170
+    ],
+    "note": "Genuine synthetic passport. Five MRZ check digits verify."
+  },
+  "signals": [
+    {
+      "id": "extraction.quality.blur",
+      "module": "extraction",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Image sharpness 412, above the 180 threshold",
+      "region": null,
+      "latency_ms": 60
+    },
+    {
+      "id": "extraction.doctype.confidence",
+      "module": "extraction",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.97,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Identified as passport, confidence 97%",
+      "region": null,
+      "latency_ms": 15
+    },
+    {
+      "id": "validation.signature.valid",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "cryptographic",
+      "hard_fail": true,
+      "anchor": "document",
+      "evidence": "Ed25519 signature verifies against trusted issuer SIH-REF-01",
+      "region": null,
+      "latency_ms": 4
+    },
+    {
+      "id": "validation.signature.issuer_trusted",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "cryptographic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Issuer SIH-REF-01 is present in the trust anchor store",
+      "region": null,
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.mrz.checkdigit.document_number",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "field:id_number",
+      "evidence": "MRZ document number check digit 3 is correct",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "latency_ms": 2
+    },
+    {
+      "id": "validation.mrz.checkdigit.dob",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "field:dob",
+      "evidence": "MRZ date of birth check digit 7 is correct",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "latency_ms": 2
+    },
+    {
+      "id": "validation.mrz.checkdigit.expiry",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "field:expiry_date",
+      "evidence": "MRZ expiry check digit 4 is correct",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "latency_ms": 2
+    },
+    {
+      "id": "validation.mrz.checkdigit.optional",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "field:secondary_id",
+      "evidence": "MRZ optional data check digit 0 is correct",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.mrz.checkdigit.composite",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": true,
+      "anchor": "document",
+      "evidence": "MRZ composite check digit 8 is correct",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "latency_ms": 2
+    },
+    {
+      "id": "validation.vizmrz.dob_mismatch",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "field:dob",
+      "evidence": "MRZ date of birth 1991-08-04 matches printed 1991-08-04",
+      "region": [
+        600,
+        470,
+        950,
+        525
+      ],
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.vizmrz.name_mismatch",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "field:name",
+      "evidence": "MRZ name MUHAMAD SABRI matches printed MUHAMAD SABRI",
+      "region": [
+        600,
+        360,
+        1250,
+        415
+      ],
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.crossfield.date_order",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Issued 2021-07-18, before expiry 2031-07-17",
+      "region": null,
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.expiry.expired",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": true,
+      "anchor": "field:expiry_date",
+      "evidence": "Expires 2031-07-17, valid for another 5 years 10 months",
+      "region": [
+        600,
+        580,
+        950,
+        635
+      ],
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.watchlist.hit",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": true,
+      "anchor": "document",
+      "evidence": "No match in the OFAC SDN or UN Consolidated list",
+      "region": null,
+      "latency_ms": 7
+    },
+    {
+      "id": "tamper.physical.ocrb_conformance",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.88,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:mrz",
+      "evidence": "MRZ glyphs conform to OCR-B within tolerance",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "latency_ms": 44
+    },
+    {
+      "id": "tamper.physical.guilloche_break",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.81,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Guilloche line-work runs continuously across the data page",
+      "region": null,
+      "latency_ms": 52
+    },
+    {
+      "id": "tamper.physical.ghost_missing",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.9,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:ghost_photo",
+      "evidence": "Ghost portrait present and consistent with the primary photo",
+      "region": [
+        1300,
+        560,
+        1480,
+        800
+      ],
+      "latency_ms": 31
+    },
+    {
+      "id": "tamper.physical.layout_geometry",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.86,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Field positions fall within 1.2 mm of the TD3 reference layout",
+      "region": null,
+      "latency_ms": 18
+    },
+    {
+      "id": "tamper.digital.exif_software",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "not_applicable",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Scanner input, so file metadata checks do not apply",
+      "region": null,
+      "latency_ms": 0
+    },
+    {
+      "id": "face.doc.detected",
+      "module": "face",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.99,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:person_photo",
+      "evidence": "Face located in the document photo",
+      "region": [
+        110,
+        300,
+        480,
+        800
+      ],
+      "latency_ms": 96
+    },
+    {
+      "id": "face.live.detected",
+      "module": "face",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.99,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Face located in the live camera frame",
+      "region": null,
+      "latency_ms": 88
+    },
+    {
+      "id": "face.liveness.passive",
+      "module": "face",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.94,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Passive liveness 0.94, consistent with a live subject",
+      "region": null,
+      "latency_ms": 74
+    },
+    {
+      "id": "face.match.cosine",
+      "module": "face",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.83,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:person_photo",
+      "evidence": "Document and live face match at cosine 0.61, against a 0.32 threshold",
+      "region": [
+        110,
+        300,
+        480,
+        800
+      ],
+      "latency_ms": 62
+    }
+  ],
+  "findings": [
+    {
+      "anchor": "document",
+      "severity": 0.0,
+      "trust_class": "cryptographic",
+      "headline": "Signature verifies against a trusted issuer",
+      "region": null,
+      "supporting": [
+        {
+          "id": "extraction.quality.blur",
+          "module": "extraction",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Image sharpness 412, above the 180 threshold",
+          "region": null,
+          "latency_ms": 60
+        },
+        {
+          "id": "extraction.doctype.confidence",
+          "module": "extraction",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.97,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Identified as passport, confidence 97%",
+          "region": null,
+          "latency_ms": 15
+        },
+        {
+          "id": "validation.signature.valid",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "cryptographic",
+          "hard_fail": true,
+          "anchor": "document",
+          "evidence": "Ed25519 signature verifies against trusted issuer SIH-REF-01",
+          "region": null,
+          "latency_ms": 4
+        },
+        {
+          "id": "validation.signature.issuer_trusted",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "cryptographic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Issuer SIH-REF-01 is present in the trust anchor store",
+          "region": null,
+          "latency_ms": 1
+        },
+        {
+          "id": "validation.mrz.checkdigit.composite",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": true,
+          "anchor": "document",
+          "evidence": "MRZ composite check digit 8 is correct",
+          "region": [
+            90,
+            900,
+            1564,
+            1050
+          ],
+          "latency_ms": 2
+        },
+        {
+          "id": "validation.crossfield.date_order",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Issued 2021-07-18, before expiry 2031-07-17",
+          "region": null,
+          "latency_ms": 1
+        },
+        {
+          "id": "validation.watchlist.hit",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": true,
+          "anchor": "document",
+          "evidence": "No match in the OFAC SDN or UN Consolidated list",
+          "region": null,
+          "latency_ms": 7
+        },
+        {
+          "id": "tamper.physical.guilloche_break",
+          "module": "tamper",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.81,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Guilloche line-work runs continuously across the data page",
+          "region": null,
+          "latency_ms": 52
+        },
+        {
+          "id": "tamper.physical.layout_geometry",
+          "module": "tamper",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.86,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Field positions fall within 1.2 mm of the TD3 reference layout",
+          "region": null,
+          "latency_ms": 18
+        },
+        {
+          "id": "tamper.digital.exif_software",
+          "module": "tamper",
+          "tier": 1,
+          "verdict": "not_applicable",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Scanner input, so file metadata checks do not apply",
+          "region": null,
+          "latency_ms": 0
+        },
+        {
+          "id": "face.live.detected",
+          "module": "face",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.99,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Face located in the live camera frame",
+          "region": null,
+          "latency_ms": 88
+        },
+        {
+          "id": "face.liveness.passive",
+          "module": "face",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.94,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Passive liveness 0.94, consistent with a live subject",
+          "region": null,
+          "latency_ms": 74
+        }
+      ]
+    },
+    {
+      "anchor": "document",
+      "severity": 0.0,
+      "trust_class": "arithmetic",
+      "headline": "All five MRZ check digits are correct",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "supporting": [
+        {
+          "id": "extraction.quality.blur",
+          "module": "extraction",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Image sharpness 412, above the 180 threshold",
+          "region": null,
+          "latency_ms": 60
+        },
+        {
+          "id": "extraction.doctype.confidence",
+          "module": "extraction",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.97,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Identified as passport, confidence 97%",
+          "region": null,
+          "latency_ms": 15
+        },
+        {
+          "id": "validation.signature.valid",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "cryptographic",
+          "hard_fail": true,
+          "anchor": "document",
+          "evidence": "Ed25519 signature verifies against trusted issuer SIH-REF-01",
+          "region": null,
+          "latency_ms": 4
+        },
+        {
+          "id": "validation.signature.issuer_trusted",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "cryptographic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Issuer SIH-REF-01 is present in the trust anchor store",
+          "region": null,
+          "latency_ms": 1
+        },
+        {
+          "id": "validation.mrz.checkdigit.composite",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": true,
+          "anchor": "document",
+          "evidence": "MRZ composite check digit 8 is correct",
+          "region": [
+            90,
+            900,
+            1564,
+            1050
+          ],
+          "latency_ms": 2
+        },
+        {
+          "id": "validation.crossfield.date_order",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Issued 2021-07-18, before expiry 2031-07-17",
+          "region": null,
+          "latency_ms": 1
+        },
+        {
+          "id": "validation.watchlist.hit",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": true,
+          "anchor": "document",
+          "evidence": "No match in the OFAC SDN or UN Consolidated list",
+          "region": null,
+          "latency_ms": 7
+        },
+        {
+          "id": "tamper.physical.guilloche_break",
+          "module": "tamper",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.81,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Guilloche line-work runs continuously across the data page",
+          "region": null,
+          "latency_ms": 52
+        },
+        {
+          "id": "tamper.physical.layout_geometry",
+          "module": "tamper",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.86,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Field positions fall within 1.2 mm of the TD3 reference layout",
+          "region": null,
+          "latency_ms": 18
+        },
+        {
+          "id": "tamper.digital.exif_software",
+          "module": "tamper",
+          "tier": 1,
+          "verdict": "not_applicable",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Scanner input, so file metadata checks do not apply",
+          "region": null,
+          "latency_ms": 0
+        },
+        {
+          "id": "face.live.detected",
+          "module": "face",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.99,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Face located in the live camera frame",
+          "region": null,
+          "latency_ms": 88
+        },
+        {
+          "id": "face.liveness.passive",
+          "module": "face",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.94,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Passive liveness 0.94, consistent with a live subject",
+          "region": null,
+          "latency_ms": 74
+        }
+      ]
+    }
+  ],
+  "verdict": {
+    "band": "GREEN",
+    "score": 0.04,
+    "coverage": 0.96,
+    "disclosure": "Signature verified against our reference issuer, for demonstration. We hold no government keys."
+  },
+  "face": {
+    "cosine": 0.61,
+    "threshold": 0.32
+  },
+  "fields": [
+    {
+      "name": "name",
+      "value": "MUHAMAD SABRI",
+      "source": "mrz",
+      "confidence": 1.0,
+      "state": "pass",
+      "region": [
+        600,
+        360,
+        1250,
+        415
+      ]
+    },
+    {
+      "name": "dob",
+      "value": "1991-08-04",
+      "source": "mrz",
+      "confidence": 1.0,
+      "state": "pass",
+      "region": [
+        600,
+        470,
+        950,
+        525
+      ]
+    },
+    {
+      "name": "id_number",
+      "value": "E1009353",
+      "source": "mrz",
+      "confidence": 1.0,
+      "state": "pass",
+      "region": [
+        600,
+        250,
+        1000,
+        300
+      ]
+    },
+    {
+      "name": "nationality",
+      "value": "IND",
+      "source": "mrz",
+      "confidence": 1.0,
+      "state": "pass",
+      "region": [
+        1020,
+        360,
+        1330,
+        415
+      ]
+    },
+    {
+      "name": "expiry_date",
+      "value": "2031-07-17",
+      "source": "mrz",
+      "confidence": 1.0,
+      "state": "pass",
+      "region": [
+        600,
+        580,
+        950,
+        635
+      ]
+    }
+  ]
+}

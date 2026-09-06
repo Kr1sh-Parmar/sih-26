@@ -1,0 +1,404 @@
+{
+  "meta": {
+    "scene": "3 \u2014 cross-document trust propagation",
+    "doc_type": "pan",
+    "canvas": [
+      1400,
+      900
+    ],
+    "note": "A signed Aadhaar presented earlier in this session gives 1996. This PAN prints 1998.",
+    "session_documents": [
+      {
+        "doc_type": "aadhaar",
+        "signed": true,
+        "label": "Aadhaar",
+        "band": "GREEN",
+        "anchors": [
+          "name",
+          "dob"
+        ]
+      },
+      {
+        "doc_type": "pan",
+        "canvas": [
+          1400,
+          900
+        ],
+        "signed": false,
+        "label": "PAN",
+        "band": "RED",
+        "anchors": [
+          "name",
+          "dob"
+        ]
+      }
+    ],
+    "propagation": [
+      {
+        "field": "name",
+        "from": "aadhaar",
+        "to": "pan",
+        "agrees": true,
+        "from_value": "PRADEEP KESHAV GHARAT",
+        "to_value": "PRADEEP KESHAV GHARAT"
+      },
+      {
+        "field": "dob",
+        "from": "aadhaar",
+        "to": "pan",
+        "agrees": false,
+        "from_value": "1996-11-02",
+        "to_value": "1998-11-02"
+      }
+    ]
+  },
+  "signals": [
+    {
+      "id": "extraction.quality.blur",
+      "module": "extraction",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Image sharpness 356, above the 180 threshold",
+      "region": null,
+      "latency_ms": 60
+    },
+    {
+      "id": "extraction.doctype.confidence",
+      "module": "extraction",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.95,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Identified as a PAN card, confidence 95%",
+      "region": null,
+      "latency_ms": 15
+    },
+    {
+      "id": "validation.signature.valid",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "not_applicable",
+      "confidence": 1.0,
+      "trust_class": "unverified",
+      "hard_fail": true,
+      "anchor": "document",
+      "evidence": "A PAN card carries no signature payload, so it has no cryptographic anchor of its own",
+      "region": null,
+      "latency_ms": 2
+    },
+    {
+      "id": "validation.format.pan.id_number",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "field:id_number",
+      "evidence": "PAN check character F is correct for ABLPG7040",
+      "region": [
+        110,
+        640,
+        620,
+        700
+      ],
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.mrz.checkdigit.composite",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "not_applicable",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": true,
+      "anchor": "document",
+      "evidence": "A PAN card has no machine-readable zone",
+      "region": null,
+      "latency_ms": 0
+    },
+    {
+      "id": "validation.crossdoc.dob_mismatch",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "fail",
+      "confidence": 1.0,
+      "trust_class": "cryptographic",
+      "hard_fail": true,
+      "anchor": "field:dob",
+      "evidence": "The signed Aadhaar payload gives date of birth 1996-11-02; this PAN prints 1998-11-02",
+      "region": [
+        110,
+        480,
+        560,
+        535
+      ],
+      "latency_ms": 3
+    },
+    {
+      "id": "validation.crossdoc.name_mismatch",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "cryptographic",
+      "hard_fail": false,
+      "anchor": "field:name",
+      "evidence": "The signed Aadhaar payload name PRADEEP KESHAV GHARAT matches this PAN",
+      "region": [
+        110,
+        300,
+        800,
+        355
+      ],
+      "latency_ms": 2
+    },
+    {
+      "id": "validation.watchlist.hit",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": true,
+      "anchor": "document",
+      "evidence": "No match in the OFAC SDN or UN Consolidated list",
+      "region": null,
+      "latency_ms": 7
+    },
+    {
+      "id": "tamper.physical.layout_geometry",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.83,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Field positions fall within 1.8 mm of the PAN reference layout",
+      "region": null,
+      "latency_ms": 18
+    },
+    {
+      "id": "tamper.physical.ocrb_conformance",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "fail",
+      "confidence": 0.44,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:dob",
+      "evidence": "Printed date of birth glyph weight differs slightly from the rest of the line",
+      "region": [
+        110,
+        480,
+        560,
+        535
+      ],
+      "latency_ms": 44
+    },
+    {
+      "id": "face.doc.detected",
+      "module": "face",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.98,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:person_photo",
+      "evidence": "Face located in the document photo",
+      "region": [
+        1080,
+        300,
+        1330,
+        620
+      ],
+      "latency_ms": 96
+    },
+    {
+      "id": "face.liveness.passive",
+      "module": "face",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.93,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Passive liveness 0.93, consistent with a live subject",
+      "region": null,
+      "latency_ms": 74
+    },
+    {
+      "id": "face.match.cosine",
+      "module": "face",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.77,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:person_photo",
+      "evidence": "Document and live face match at cosine 0.54, against a 0.32 threshold",
+      "region": [
+        1080,
+        300,
+        1330,
+        620
+      ],
+      "latency_ms": 62
+    }
+  ],
+  "findings": [
+    {
+      "anchor": "field:dob",
+      "severity": 1.0,
+      "trust_class": "cryptographic",
+      "headline": "Date of birth contradicts a signed document in this session",
+      "region": [
+        110,
+        480,
+        560,
+        535
+      ],
+      "supporting": [
+        {
+          "id": "validation.crossdoc.dob_mismatch",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "fail",
+          "confidence": 1.0,
+          "trust_class": "cryptographic",
+          "hard_fail": true,
+          "anchor": "field:dob",
+          "evidence": "The signed Aadhaar payload gives date of birth 1996-11-02; this PAN prints 1998-11-02",
+          "region": [
+            110,
+            480,
+            560,
+            535
+          ],
+          "latency_ms": 3
+        },
+        {
+          "id": "tamper.physical.ocrb_conformance",
+          "module": "tamper",
+          "tier": 1,
+          "verdict": "fail",
+          "confidence": 0.44,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "field:dob",
+          "evidence": "Printed date of birth glyph weight differs slightly from the rest of the line",
+          "region": [
+            110,
+            480,
+            560,
+            535
+          ],
+          "latency_ms": 44
+        }
+      ]
+    },
+    {
+      "anchor": "field:name",
+      "severity": 0.0,
+      "trust_class": "cryptographic",
+      "headline": "Name is confirmed by the signed Aadhaar payload",
+      "region": [
+        110,
+        300,
+        800,
+        355
+      ],
+      "supporting": [
+        {
+          "id": "validation.crossdoc.name_mismatch",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "cryptographic",
+          "hard_fail": false,
+          "anchor": "field:name",
+          "evidence": "The signed Aadhaar payload name PRADEEP KESHAV GHARAT matches this PAN",
+          "region": [
+            110,
+            300,
+            800,
+            355
+          ],
+          "latency_ms": 2
+        }
+      ]
+    }
+  ],
+  "verdict": {
+    "band": "RED",
+    "score": 1.0,
+    "coverage": 0.91,
+    "disclosure": "Signature verified against our reference issuer, for demonstration. We hold no government keys. The trust anchor store is keyed by issuer, and the verification code is unchanged for a real one."
+  },
+  "face": {
+    "cosine": 0.54,
+    "threshold": 0.32
+  },
+  "fields": [
+    {
+      "name": "name",
+      "value": "PRADEEP KESHAV GHARAT",
+      "source": "ocr",
+      "confidence": 0.96,
+      "state": "pass",
+      "region": [
+        110,
+        300,
+        800,
+        355
+      ]
+    },
+    {
+      "name": "father_name",
+      "value": "KESHAV NARAYAN GHARAT",
+      "source": "ocr",
+      "confidence": 0.94,
+      "state": "pass",
+      "region": [
+        110,
+        390,
+        800,
+        445
+      ]
+    },
+    {
+      "name": "dob",
+      "value": "1998-11-02",
+      "source": "ocr",
+      "confidence": 0.95,
+      "state": "fail",
+      "region": [
+        110,
+        480,
+        560,
+        535
+      ]
+    },
+    {
+      "name": "id_number",
+      "value": "ABLPG7040F",
+      "source": "ocr",
+      "confidence": 0.97,
+      "state": "pass",
+      "region": [
+        110,
+        640,
+        620,
+        700
+      ]
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+- generic [ref=f5e3]:
+  - banner [ref=f5e4]:
+    - generic [ref=f5e5]:
+      - link "Sashastra Seema Bal" [ref=f5e6] [cursor=pointer]:
+        - /url: "#/"
+      - generic [ref=f5e7]: Raxaul integrated check post
+      - generic [ref=f5e8]: 16:12
+      - generic [ref=f5e9]: Officer 4471
+    - navigation [ref=f5e10]:
+      - link "Capture" [ref=f5e11] [cursor=pointer]:
+        - /url: "#/capture"
+      - link "Screening" [ref=f5e12] [cursor=pointer]:
+        - /url: "#/screening"
+      - link "Session" [ref=f5e13] [cursor=pointer]:
+        - /url: "#/session"
+      - link "Operating point" [ref=f5e14] [cursor=pointer]:
+        - /url: "#/operating-point"
+      - link "Audit" [ref=f5e15] [cursor=pointer]:
+        - /url: "#/audit"
+  - main [ref=f5e16]:
+    - generic [ref=f5e123]:
+      - generic [ref=f5e124]:
+        - generic [ref=f5e125]:
+          - generic [ref=f5e126]: Read
+          - generic [ref=f5e129]: Validate
+          - generic [ref=f5e132]: Tamper
+          - generic [ref=f5e135]: Face
+          - generic [ref=f5e138]: Ready
+        - generic [ref=f5e140]:
+          - generic [ref=f5e141]:
+            - img "Synthetic passport data page, drawn specimen" [ref=f5e142]:
+              - generic [ref=f5e145]: REPUBLIC OF INDIA
+              - generic [ref=f5e146]: SPECIMEN — GENERATED, NOT A REAL DOCUMENT
+              - generic [ref=f5e157]:
+                - generic [ref=f5e158]: Passport No.
+                - generic [ref=f5e159]: E1009353
+              - generic [ref=f5e160]:
+                - generic [ref=f5e161]: Surname and given names
+                - generic [ref=f5e162]: MUHAMAD SABRI
+              - generic [ref=f5e163]:
+                - generic [ref=f5e164]: Nationality
+                - generic [ref=f5e165]: IND
+              - generic [ref=f5e166]:
+                - generic [ref=f5e167]: Date of birth
+                - generic [ref=f5e168]: 1991-08-04
+              - generic [ref=f5e169]:
+                - generic [ref=f5e170]: Date of expiry
+                - generic [ref=f5e171]: 2031-07-17
+              - generic [ref=f5e173]: P<INDMUHAMAD<<SABRI<<<<<<<<<<<<<<<<<<<<<<<<<
+              - generic [ref=f5e174]: E1009353<3IND9108047M3107174<<<<<<<<<<<<<<<<
+            - img [ref=f5e175]:
+              - generic [ref=f5e176] [cursor=pointer]
+              - generic [ref=f5e177] [cursor=pointer]
+              - generic [ref=f5e178] [cursor=pointer]
+              - generic [ref=f5e179] [cursor=pointer]
+              - generic [ref=f5e180] [cursor=pointer]
+          - paragraph [ref=f5e181]: Drawn specimen. The generator has not produced templates yet, so no real document appears anywhere in this repository.
+        - generic [ref=f5e182]:
+          - generic [ref=f5e183]:
+            - generic [ref=f5e184]:
+              - paragraph [ref=f5e190]: From the document
+              - paragraph [ref=f5e196]: From the camera
+            - paragraph [ref=f5e197]: Match
+            - paragraph [ref=f5e198]:
+              - text: cosine 0.61
+              - generic [ref=f5e200]: "+0.29"
+              - text: from the 0.32 threshold
+            - generic [ref=f5e205]:
+              - generic [ref=f5e206]: no match
+              - generic [ref=f5e207]: threshold
+              - generic [ref=f5e208]: match
+          - generic [ref=f5e209]:
+            - heading "Extracted fields" [level=2] [ref=f5e210]
+            - table [ref=f5e212]:
+              - rowgroup [ref=f5e213]:
+                - row [ref=f5e214]:
+                  - cell "Name" [ref=f5e215]
+                  - cell "MUHAMAD SABRI" [ref=f5e216]
+                  - cell "machine-readable zone" [ref=f5e217]
+                  - cell [ref=f5e223]
+                - row [ref=f5e224]:
+                  - cell "Date of birth" [ref=f5e225]
+                  - cell "1991-08-04" [ref=f5e226]
+                  - cell "machine-readable zone" [ref=f5e227]
+                  - cell [ref=f5e233]
+                - row [ref=f5e234]:
+                  - cell "Number" [ref=f5e235]
+                  - cell "E1009353" [ref=f5e236]
+                  - cell "machine-readable zone" [ref=f5e237]
+                  - cell [ref=f5e243]
+                - row [ref=f5e244]:
+                  - cell "Nationality" [ref=f5e245]
+                  - cell "IND" [ref=f5e246]
+                  - cell "machine-readable zone" [ref=f5e247]
+                  - cell [ref=f5e253]
+                - row [ref=f5e254]:
+                  - cell "Expires" [ref=f5e255]
+                  - cell "2031-07-17" [ref=f5e256]
+                  - cell "machine-readable zone" [ref=f5e257]
+                  - cell [ref=f5e263]
+      - generic [ref=f5e264]:
+        - generic [ref=f5e265]:
+          - generic [ref=f5e266]: READING
+          - paragraph [ref=f5e268]: Checks are still running.
+        - heading "Evidence" [level=2] [ref=f5e269]
+        - paragraph [ref=f5e271]: Nothing to report yet. Checks are still running.
+        - generic [ref=f5e272]:
+          - paragraph [ref=f5e273]: Replay a rehearsed case
+          - generic [ref=f5e274]:
+            - button "Clean passport" [ref=f5e275]
+            - button "Altered date of birth" [ref=f5e276]
+            - button "PAN against a signed Aadhaar" [ref=f5e277]
+            - button "Capture too soft" [ref=f5e278]
+  - contentinfo [ref=f5e86]:
+    - list [ref=f5e87]:
+      - listitem [ref=f5e88]:
+        - generic [ref=f5e98]: cryptographic
+        - generic [ref=f5e99]: A signature verifies against a trusted key. Certain.
+      - listitem [ref=f5e100]:
+        - generic [ref=f5e106]: arithmetic
+        - generic [ref=f5e107]: A deterministic check. No model, no key.
+      - listitem [ref=f5e108]:
+        - generic [ref=f5e115]: probabilistic
+        - generic [ref=f5e116]: Inference. It can be wrong.
+      - listitem [ref=f5e117]:
+        - generic [ref=f5e121]: unverified
+        - generic [ref=f5e122]: No check was available. Not the same as passing.

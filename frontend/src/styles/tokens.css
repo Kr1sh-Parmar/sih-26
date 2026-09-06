@@ -1,0 +1,86 @@
+@import "tailwindcss";
+@import "./fonts.css";
+
+/* Design tokens — frontend.md §1.2 and §1.4.
+   The palette is the colour of the paper the officer is already holding:
+   an Indian passport data page is lilac over buttery guilloche, the Aadhaar
+   PVC card is cream. Structural devices are borrowed from security printing
+   and every one of them encodes information rather than decorating. */
+@theme {
+  /* Ground and ink */
+  --color-paper: #fff2cf;      /* application ground — the examination surface */
+  --color-guilloche: #f8de7e;  /* SECONDARY band · focus ring · active state   */
+  --color-bloom: #e7c9e8;      /* evidence panel, one step lifted from paper   */
+  --color-iris: #b39bbe;       /* RULES AND MARKS ONLY — 2.2:1, fails AA text  */
+  --color-iris-ink: #6e5c7a;   /* secondary text — 5.6:1, passes AA            */
+  --color-intaglio: #3a2e45;   /* primary text · chrome · viewer well — 11.8:1 */
+
+  /* Verdict. The supplied palette has no green and no red, and a border
+     verdict is safety-critical at 3 metres for a possibly colour-blind
+     officer. These three are tuned to sit inside the plum-lilac family
+     rather than pulled from a default UI kit. Colour never carries the
+     verdict alone — the word does the work. */
+  --color-clear: #1f5d4c;
+  --color-clear-lit: #7fd1b0;      /* on the plum well */
+  --color-secondary-ink: #8a6a0f;  /* text on the guilloche band */
+  --color-detain: #a3123a;
+  --color-detain-lit: #ff7a94;     /* on the plum well */
+
+  /* Type */
+  --font-sans: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  --text-verdict: 4.75rem;      /* 76px — reads across the room       */
+  --text-verdict--line-height: 0.92;
+  --text-screen: 1.6875rem;     /* 27px */
+  --text-evidence: 1.1875rem;   /* 19px — the line the officer must read */
+  --text-body: 1.0625rem;       /* 17px */
+  --text-label: 0.875rem;       /* 14px */
+  --text-data: 1rem;            /* 16px mono */
+
+  /* Radius: 0 everywhere structural — documents have square corners and so
+     does plate registration. The pill is reserved for trust-class chips, so
+     the shape itself means "this is a trust class". */
+  --radius-chip: 999px;
+}
+
+@layer base {
+  html {
+    font-size: 100%;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-intaglio);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.5;
+  }
+
+  /* Machine-readable strings align by column so check digits can be
+     compared by eye. */
+  code, kbd, samp, .data {
+    font-family: var(--font-mono);
+    font-size: var(--text-data);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-guilloche);
+    outline-offset: 2px;
+  }
+
+  /* No shadows anywhere. Separation is by hairline rule and ground tint. */
+  * { box-shadow: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

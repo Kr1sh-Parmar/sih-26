@@ -1,0 +1,79 @@
+- generic [ref=f4e3]:
+  - banner [ref=f4e4]:
+    - generic [ref=f4e5]:
+      - link "Sashastra Seema Bal" [ref=f4e6] [cursor=pointer]:
+        - /url: "#/"
+      - generic [ref=f4e7]: Raxaul integrated check post
+      - generic [ref=f4e8]: 16:10
+      - generic [ref=f4e9]: Officer 4471
+    - navigation [ref=f4e10]:
+      - link "Capture" [ref=f4e11] [cursor=pointer]:
+        - /url: "#/capture"
+      - link "Screening" [ref=f4e12] [cursor=pointer]:
+        - /url: "#/screening"
+      - link "Session" [ref=f4e13] [cursor=pointer]:
+        - /url: "#/session"
+      - link "Operating point" [ref=f4e14] [cursor=pointer]:
+        - /url: "#/operating-point"
+      - link "Audit" [ref=f4e15] [cursor=pointer]:
+        - /url: "#/audit"
+  - main [ref=f4e16]:
+    - generic [ref=f4e80]:
+      - heading "Documents presented together" [level=1] [ref=f4e81]
+      - paragraph [ref=f4e82]: Session mtpokvxw-ta1k
+      - generic [ref=f4e83]:
+        - generic [ref=f4e84]:
+          - generic [ref=f4e85]:
+            - generic [ref=f4e95]: Aadhaar
+            - generic [ref=f4e96]: aadhaar
+          - paragraph [ref=f4e97]: Carries a signature that verifies. Its payload is ground truth for this session.
+          - paragraph [ref=f4e98]: CLEAR
+        - generic [ref=f4e99]:
+          - generic [ref=f4e100]:
+            - generic [ref=f4e104]: PAN
+            - generic [ref=f4e105]: pan
+          - paragraph [ref=f4e106]: No signature payload. Nothing on this card proves itself.
+          - paragraph [ref=f4e107]: DETAIN
+      - paragraph [ref=f4e108]: The Aadhaar signature verifies against a key in the trust anchor store. Everything inside that signed payload is therefore proven, and it can be used to check the documents presented with it.
+      - list [ref=f4e109]:
+        - listitem [ref=f4e110]:
+          - generic [ref=f4e111]:
+            - paragraph [ref=f4e112]: Name
+            - paragraph [ref=f4e113]: PRADEEP KESHAV GHARAT
+            - paragraph [ref=f4e114]: signed payload
+          - generic [ref=f4e115]: confirms
+          - generic [ref=f4e119]:
+            - paragraph [ref=f4e120]: Name
+            - paragraph [ref=f4e121]: PRADEEP KESHAV GHARAT
+            - paragraph [ref=f4e122]: printed on the card
+        - listitem [ref=f4e123]:
+          - generic [ref=f4e124]:
+            - paragraph [ref=f4e125]: Date of birth
+            - paragraph [ref=f4e126]: 1996-11-02
+            - paragraph [ref=f4e127]: signed payload
+          - generic [ref=f4e128]: contradicts
+          - generic [ref=f4e132]:
+            - paragraph [ref=f4e133]: Date of birth
+            - paragraph [ref=f4e134]: 1998-11-02
+            - paragraph [ref=f4e135]: printed on the card
+      - generic [ref=f4e136]:
+        - paragraph [ref=f4e137]: Date of birth is contradicted by a signed document.
+        - paragraph [ref=f4e138]: This is a cryptographic finding, not an inference. No model produced it and no threshold was crossed — two values that must be the same are different, and one of them is signed.
+        - link "Open the disputed document" [ref=f4e139] [cursor=pointer]:
+          - /url: "#/screening"
+      - complementary [ref=f4e140]:
+        - paragraph [ref=f4e145]: Signature verified against our reference issuer, for demonstration. We hold no government keys. The trust anchor store is keyed by issuer, and the verification code is unchanged for a real one.
+  - contentinfo [ref=f4e43]:
+    - list [ref=f4e44]:
+      - listitem [ref=f4e45]:
+        - generic [ref=f4e55]: cryptographic
+        - generic [ref=f4e56]: A signature verifies against a trusted key. Certain.
+      - listitem [ref=f4e57]:
+        - generic [ref=f4e63]: arithmetic
+        - generic [ref=f4e64]: A deterministic check. No model, no key.
+      - listitem [ref=f4e65]:
+        - generic [ref=f4e72]: probabilistic
+        - generic [ref=f4e73]: Inference. It can be wrong.
+      - listitem [ref=f4e74]:
+        - generic [ref=f4e78]: unverified
+        - generic [ref=f4e79]: No check was available. Not the same as passing.

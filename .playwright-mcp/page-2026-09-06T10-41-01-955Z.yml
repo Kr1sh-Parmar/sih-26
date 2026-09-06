@@ -1,0 +1,91 @@
+- generic [ref=f4e3]:
+  - banner [ref=f4e4]:
+    - generic [ref=f4e5]:
+      - link "Sashastra Seema Bal" [ref=f4e6] [cursor=pointer]:
+        - /url: "#/"
+      - generic [ref=f4e7]: Raxaul integrated check post
+      - generic [ref=f4e8]: 16:11
+      - generic [ref=f4e9]: Officer 4471
+    - navigation [ref=f4e10]:
+      - link "Capture" [ref=f4e11] [cursor=pointer]:
+        - /url: "#/capture"
+      - link "Screening" [ref=f4e12] [cursor=pointer]:
+        - /url: "#/screening"
+      - link "Session" [ref=f4e13] [cursor=pointer]:
+        - /url: "#/session"
+      - link "Operating point" [ref=f4e14] [cursor=pointer]:
+        - /url: "#/operating-point"
+      - link "Audit" [ref=f4e15] [cursor=pointer]:
+        - /url: "#/audit"
+  - main [ref=f4e16]:
+    - generic [ref=f4e146]:
+      - heading "Operating point" [level=1] [ref=f4e147]
+      - paragraph [ref=f4e148]: Where the face threshold sits decides who gets stopped and who gets through. There is no setting that avoids both. This is a command decision, so it lives here rather than in a config file.
+      - generic [ref=f4e149]:
+        - generic [ref=f4e150]:
+          - paragraph [ref=f4e151]: "0.32"
+          - paragraph [ref=f4e152]: cosine threshold
+        - generic [ref=f4e153]:
+          - paragraph [ref=f4e154]: "94"
+          - paragraph [ref=f4e155]: genuine travellers sent to secondary inspection, per day
+        - generic [ref=f4e156]:
+          - paragraph [ref=f4e157]: "7"
+          - paragraph [ref=f4e158]: impostors the face check would let through, per day
+      - paragraph [ref=f4e159]: At 5,000 crossings a day.
+      - figure "How the two errors trade off Genuine stopped (FRR) Impostor admitted (FAR)" [ref=f4e160]:
+        - generic [ref=f4e161]:
+          - generic [ref=f4e162]: How the two errors trade off
+          - generic [ref=f4e163]:
+            - generic [ref=f4e164]: Genuine stopped (FRR)
+            - generic [ref=f4e167]: Impostor admitted (FAR)
+        - img "False rejection and false acceptance against the cosine threshold. At 0.32, 1.9% of genuine travellers are stopped and 0.13% of impostors are admitted." [ref=f4e170]:
+          - generic [ref=f4e171]: 0.10%
+          - generic [ref=f4e173]: 1.0%
+          - generic [ref=f4e175]: 5.0%
+          - generic [ref=f4e177]: 20.0%
+          - generic [ref=f4e179]: 50.0%
+          - generic [ref=f4e181]: 100.0%
+          - generic [ref=f4e183]: "0.0"
+          - generic [ref=f4e184]: "0.2"
+          - generic [ref=f4e185]: "0.4"
+          - generic [ref=f4e186]: "0.6"
+          - generic [ref=f4e187]: "0.8"
+          - generic [ref=f4e188]: cosine threshold
+          - generic [ref=f4e189]: equal error
+          - generic [ref=f4e192]: genuine stopped
+          - generic [ref=f4e193]: impostor admitted
+        - paragraph [ref=f4e196]: At threshold 0.321.9% of genuine travellers stopped0.13% of impostors admitted
+      - generic [ref=f4e199]:
+        - text: Threshold
+        - slider "Threshold" [ref=f4e200]: "0.32"
+      - button "Show the same numbers as a table" [ref=f4e201]
+      - generic [ref=f4e202]:
+        - heading "Verdict bands" [level=2] [ref=f4e203]
+        - paragraph [ref=f4e205]: Changing any of these re-scores every historical event from its stored signals. Nothing is re-inferred, so the audit trail stays comparable.
+        - generic [ref=f4e206]:
+          - generic [ref=f4e207]:
+            - text: Secondary above
+            - spinbutton "Secondary above" [ref=f4e208]: "0.2"
+          - generic [ref=f4e209]:
+            - text: Detain above
+            - spinbutton "Detain above" [ref=f4e210]: "0.6"
+          - generic [ref=f4e211]:
+            - text: Coverage floor
+            - spinbutton "Coverage floor" [ref=f4e212]: "0.7"
+        - generic [ref=f4e213]:
+          - text: Crossings per day
+          - spinbutton "Crossings per day" [ref=f4e214]: "5000"
+  - contentinfo [ref=f4e43]:
+    - list [ref=f4e44]:
+      - listitem [ref=f4e45]:
+        - generic [ref=f4e55]: cryptographic
+        - generic [ref=f4e56]: A signature verifies against a trusted key. Certain.
+      - listitem [ref=f4e57]:
+        - generic [ref=f4e63]: arithmetic
+        - generic [ref=f4e64]: A deterministic check. No model, no key.
+      - listitem [ref=f4e65]:
+        - generic [ref=f4e72]: probabilistic
+        - generic [ref=f4e73]: Inference. It can be wrong.
+      - listitem [ref=f4e74]:
+        - generic [ref=f4e78]: unverified
+        - generic [ref=f4e79]: No check was available. Not the same as passing.

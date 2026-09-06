@@ -1,0 +1,103 @@
+- generic [ref=f5e3]:
+  - banner [ref=f5e4]:
+    - generic [ref=f5e5]:
+      - link "Sashastra Seema Bal" [ref=f5e6] [cursor=pointer]:
+        - /url: "#/"
+      - generic [ref=f5e7]: Raxaul integrated check post
+      - generic [ref=f5e8]: 16:11
+      - generic [ref=f5e9]: Officer 4471
+    - navigation [ref=f5e10]:
+      - link "Capture" [ref=f5e11] [cursor=pointer]:
+        - /url: "#/capture"
+      - link "Screening" [ref=f5e12] [cursor=pointer]:
+        - /url: "#/screening"
+      - link "Session" [ref=f5e13] [cursor=pointer]:
+        - /url: "#/session"
+      - link "Operating point" [ref=f5e14] [cursor=pointer]:
+        - /url: "#/operating-point"
+      - link "Audit" [ref=f5e15] [cursor=pointer]:
+        - /url: "#/audit"
+  - main [ref=f5e16]:
+    - generic [ref=f5e17]:
+      - heading "Audit trail" [level=1] [ref=f5e18]
+      - paragraph [ref=f5e19]: Every screening keeps its complete signal list, not just the cards it produced. Change a band on the operating point screen and every event here re-scores from what was recorded — no model runs again.
+      - table [ref=f5e20]:
+        - rowgroup [ref=f5e21]:
+          - row [ref=f5e22]:
+            - columnheader "Time" [ref=f5e23]
+            - columnheader "Document" [ref=f5e24]
+            - columnheader "Number" [ref=f5e25]
+            - columnheader "Recorded" [ref=f5e26]
+            - columnheader "Re-scored now" [ref=f5e27]
+            - columnheader "Officer" [ref=f5e28]
+            - columnheader [ref=f5e29]
+        - rowgroup [ref=f5e30]:
+          - row [ref=f5e31]:
+            - cell "15:24" [ref=f5e32]
+            - cell "passport" [ref=f5e33]
+            - cell "••••9353sha256:62ab4f20" [ref=f5e34]
+            - cell "CLEAR" [ref=f5e35]
+            - cell "CLEARscore 0.04" [ref=f5e36]
+            - cell "4471" [ref=f5e37]
+            - cell [ref=f5e38]:
+              - button "Open" [ref=f5e39]
+          - row [ref=f5e40]:
+            - cell "15:31" [ref=f5e41]
+            - cell "passport" [ref=f5e42]
+            - cell "••••9353sha256:65a51f8a" [ref=f5e43]
+            - cell "DETAIN" [ref=f5e44]
+            - cell "DETAINhard fail — validation.vizmrz.dob_mismatch" [ref=f5e45]
+            - cell "4471" [ref=f5e46]
+            - cell [ref=f5e47]:
+              - button "Open" [ref=f5e48]
+          - row [ref=f5e49]:
+            - cell "15:39" [ref=f5e50]
+            - cell "pan" [ref=f5e51]
+            - cell "••••040Fsha256:61720c9c" [ref=f5e52]
+            - cell "DETAIN" [ref=f5e53]
+            - cell "DETAINhard fail — validation.crossdoc.dob_mismatch" [ref=f5e54]
+            - cell "4471" [ref=f5e55]
+            - cell [ref=f5e56]:
+              - button "Open" [ref=f5e57]
+          - row [ref=f5e58]:
+            - cell "15:46" [ref=f5e59]
+            - cell "passport" [ref=f5e60]
+            - cell "••••0000sha256:4974ab2c" [ref=f5e61]
+            - cell "SECONDARY" [ref=f5e62]
+            - cell "SECONDARYcoverage 38% is below the 70% floor" [ref=f5e63]
+            - cell "4471" [ref=f5e64]
+            - cell [ref=f5e65]:
+              - button "Open" [ref=f5e66]
+          - row [ref=f5e67]:
+            - cell "15:53" [ref=f5e68]
+            - cell "passport" [ref=f5e69]
+            - cell "••••9353sha256:62ab4f20" [ref=f5e70]
+            - cell "CLEAR" [ref=f5e71]
+            - cell "CLEARscore 0.04" [ref=f5e72]
+            - cell "4471" [ref=f5e73]
+            - cell [ref=f5e74]:
+              - button "Open" [ref=f5e75]
+          - row [ref=f5e76]:
+            - cell "16:00" [ref=f5e77]
+            - cell "passport" [ref=f5e78]
+            - cell "••••9353sha256:62ab4f20" [ref=f5e79]
+            - cell "CLEAR" [ref=f5e80]
+            - cell "CLEARscore 0.04" [ref=f5e81]
+            - cell "4471" [ref=f5e82]
+            - cell [ref=f5e83]:
+              - button "Open" [ref=f5e84]
+      - paragraph [ref=f5e85]: Reading 4 rehearsed cases from local fixtures. Against a live backend this list comes from GET /events and re-scoring from POST /rescore, which is the same endpoint the operating point screen calls.
+  - contentinfo [ref=f5e86]:
+    - list [ref=f5e87]:
+      - listitem [ref=f5e88]:
+        - generic [ref=f5e98]: cryptographic
+        - generic [ref=f5e99]: A signature verifies against a trusted key. Certain.
+      - listitem [ref=f5e100]:
+        - generic [ref=f5e106]: arithmetic
+        - generic [ref=f5e107]: A deterministic check. No model, no key.
+      - listitem [ref=f5e108]:
+        - generic [ref=f5e115]: probabilistic
+        - generic [ref=f5e116]: Inference. It can be wrong.
+      - listitem [ref=f5e117]:
+        - generic [ref=f5e121]: unverified
+        - generic [ref=f5e122]: No check was available. Not the same as passing.

@@ -1,0 +1,15 @@
+# secrets
+.env
+*.key
+
+# datasets and downloads — provenance is tracked in data/PROVENANCE.md,
+# the bytes are not committed
+data/raw/
+SIH/
+models/
+*.zip
+
+# python
+__pycache__/
+.venv/
+data/processed/

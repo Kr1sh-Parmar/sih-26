@@ -1,0 +1,401 @@
+{
+  "meta": {
+    "scene": "5 \u2014 the honest failure",
+    "doc_type": "passport",
+    "canvas": [
+      1654,
+      1170
+    ],
+    "note": "The machine-readable zone is too blurred to read. Coverage falls below the floor."
+  },
+  "signals": [
+    {
+      "id": "extraction.quality.blur",
+      "module": "extraction",
+      "tier": 1,
+      "verdict": "fail",
+      "confidence": 0.71,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Image sharpness 96, below the 180 threshold for a document capture",
+      "region": null,
+      "latency_ms": 60
+    },
+    {
+      "id": "extraction.quality.resolution",
+      "module": "extraction",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "1654 by 2339 pixels, 246 dpi at TD3 size",
+      "region": null,
+      "latency_ms": 3
+    },
+    {
+      "id": "extraction.doctype.confidence",
+      "module": "extraction",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 0.88,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Identified as passport, confidence 88%",
+      "region": null,
+      "latency_ms": 15
+    },
+    {
+      "id": "validation.signature.valid",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "inconclusive",
+      "confidence": 0.0,
+      "trust_class": "unverified",
+      "hard_fail": true,
+      "anchor": "document",
+      "evidence": "No signature payload found, so this document has no cryptographic anchor",
+      "region": null,
+      "latency_ms": 3
+    },
+    {
+      "id": "validation.mrz.checkdigit.composite",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "inconclusive",
+      "confidence": 0.0,
+      "trust_class": "arithmetic",
+      "hard_fail": true,
+      "anchor": "document",
+      "evidence": "The machine-readable zone could not be read",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "latency_ms": 2
+    },
+    {
+      "id": "validation.mrz.checkdigit.dob",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "inconclusive",
+      "confidence": 0.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "field:dob",
+      "evidence": "The machine-readable zone could not be read",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.vizmrz.dob_mismatch",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "inconclusive",
+      "confidence": 0.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "field:dob",
+      "evidence": "Cannot compare printed and machine-readable date of birth while the zone is unreadable",
+      "region": [
+        600,
+        470,
+        950,
+        525
+      ],
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.expiry.expired",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": true,
+      "anchor": "field:expiry_date",
+      "evidence": "Expires 2029-03-28, valid for another 3 years 6 months",
+      "region": [
+        600,
+        580,
+        950,
+        635
+      ],
+      "latency_ms": 1
+    },
+    {
+      "id": "validation.watchlist.hit",
+      "module": "validation",
+      "tier": 1,
+      "verdict": "pass",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": true,
+      "anchor": "document",
+      "evidence": "No match in the OFAC SDN or UN Consolidated list",
+      "region": null,
+      "latency_ms": 7
+    },
+    {
+      "id": "tamper.physical.ocrb_conformance",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "inconclusive",
+      "confidence": 0.0,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:mrz",
+      "evidence": "Too blurred to assess OCR-B conformance",
+      "region": [
+        90,
+        900,
+        1564,
+        1050
+      ],
+      "latency_ms": 44
+    },
+    {
+      "id": "tamper.physical.guilloche_break",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "inconclusive",
+      "confidence": 0.0,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Too blurred to trace guilloche continuity",
+      "region": null,
+      "latency_ms": 52
+    },
+    {
+      "id": "tamper.digital.exif_software",
+      "module": "tamper",
+      "tier": 1,
+      "verdict": "not_applicable",
+      "confidence": 1.0,
+      "trust_class": "arithmetic",
+      "hard_fail": false,
+      "anchor": "document",
+      "evidence": "Scanner input, so file metadata checks do not apply",
+      "region": null,
+      "latency_ms": 0
+    },
+    {
+      "id": "face.doc.quality",
+      "module": "face",
+      "tier": 1,
+      "verdict": "fail",
+      "confidence": 0.68,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:person_photo",
+      "evidence": "Document photo is below the quality gate. Ask for a higher-resolution capture of the document, not a new selfie.",
+      "region": [
+        110,
+        300,
+        480,
+        800
+      ],
+      "latency_ms": 40
+    },
+    {
+      "id": "face.match.cosine",
+      "module": "face",
+      "tier": 1,
+      "verdict": "inconclusive",
+      "confidence": 0.0,
+      "trust_class": "probabilistic",
+      "hard_fail": false,
+      "anchor": "field:person_photo",
+      "evidence": "Document photo is too soft to embed reliably",
+      "region": [
+        110,
+        300,
+        480,
+        800
+      ],
+      "latency_ms": 62
+    }
+  ],
+  "findings": [
+    {
+      "anchor": "document",
+      "severity": 0.42,
+      "trust_class": "probabilistic",
+      "headline": "The capture is too soft to read the machine-readable zone",
+      "region": null,
+      "supporting": [
+        {
+          "id": "extraction.quality.blur",
+          "module": "extraction",
+          "tier": 1,
+          "verdict": "fail",
+          "confidence": 0.71,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Image sharpness 96, below the 180 threshold for a document capture",
+          "region": null,
+          "latency_ms": 60
+        },
+        {
+          "id": "extraction.quality.resolution",
+          "module": "extraction",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "1654 by 2339 pixels, 246 dpi at TD3 size",
+          "region": null,
+          "latency_ms": 3
+        },
+        {
+          "id": "extraction.doctype.confidence",
+          "module": "extraction",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 0.88,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Identified as passport, confidence 88%",
+          "region": null,
+          "latency_ms": 15
+        },
+        {
+          "id": "validation.signature.valid",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "inconclusive",
+          "confidence": 0.0,
+          "trust_class": "unverified",
+          "hard_fail": true,
+          "anchor": "document",
+          "evidence": "No signature payload found, so this document has no cryptographic anchor",
+          "region": null,
+          "latency_ms": 3
+        },
+        {
+          "id": "validation.mrz.checkdigit.composite",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "inconclusive",
+          "confidence": 0.0,
+          "trust_class": "arithmetic",
+          "hard_fail": true,
+          "anchor": "document",
+          "evidence": "The machine-readable zone could not be read",
+          "region": [
+            90,
+            900,
+            1564,
+            1050
+          ],
+          "latency_ms": 2
+        },
+        {
+          "id": "validation.watchlist.hit",
+          "module": "validation",
+          "tier": 1,
+          "verdict": "pass",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": true,
+          "anchor": "document",
+          "evidence": "No match in the OFAC SDN or UN Consolidated list",
+          "region": null,
+          "latency_ms": 7
+        },
+        {
+          "id": "tamper.physical.guilloche_break",
+          "module": "tamper",
+          "tier": 1,
+          "verdict": "inconclusive",
+          "confidence": 0.0,
+          "trust_class": "probabilistic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Too blurred to trace guilloche continuity",
+          "region": null,
+          "latency_ms": 52
+        },
+        {
+          "id": "tamper.digital.exif_software",
+          "module": "tamper",
+          "tier": 1,
+          "verdict": "not_applicable",
+          "confidence": 1.0,
+          "trust_class": "arithmetic",
+          "hard_fail": false,
+          "anchor": "document",
+          "evidence": "Scanner input, so file metadata checks do not apply",
+          "region": null,
+          "latency_ms": 0
+        }
+      ]
+    }
+  ],
+  "verdict": {
+    "band": "AMBER",
+    "score": 0.11,
+    "coverage": 0.38,
+    "disclosure": null
+  },
+  "face": {
+    "cosine": null,
+    "threshold": 0.32
+  },
+  "fields": [
+    {
+      "name": "name",
+      "value": "SHAH RUKH",
+      "source": "ocr",
+      "confidence": 0.62,
+      "state": "inconclusive",
+      "region": [
+        600,
+        360,
+        1250,
+        415
+      ]
+    },
+    {
+      "name": "dob",
+      "value": "1988-0?-14",
+      "source": "ocr",
+      "confidence": 0.41,
+      "state": "inconclusive",
+      "region": [
+        600,
+        470,
+        950,
+        525
+      ]
+    },
+    {
+      "name": "expiry_date",
+      "value": "2029-03-28",
+      "source": "ocr",
+      "confidence": 0.87,
+      "state": "pass",
+      "region": [
+        600,
+        580,
+        950,
+        635
+      ]
+    }
+  ]
+}

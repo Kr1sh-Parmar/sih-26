@@ -1,0 +1,58 @@
+- generic [ref=f4e3]:
+  - banner [ref=f4e4]:
+    - generic [ref=f4e5]:
+      - link "Sashastra Seema Bal" [ref=f4e6] [cursor=pointer]:
+        - /url: "#/"
+      - generic [ref=f4e7]: Raxaul integrated check post
+      - generic [ref=f4e8]: 16:09
+      - generic [ref=f4e9]: Officer 4471
+    - navigation [ref=f4e10]:
+      - link "Capture" [ref=f4e11] [cursor=pointer]:
+        - /url: "#/capture"
+      - link "Screening" [ref=f4e12] [cursor=pointer]:
+        - /url: "#/screening"
+      - link "Session" [ref=f4e13] [cursor=pointer]:
+        - /url: "#/session"
+      - link "Operating point" [ref=f4e14] [cursor=pointer]:
+        - /url: "#/operating-point"
+      - link "Audit" [ref=f4e15] [cursor=pointer]:
+        - /url: "#/audit"
+  - main [ref=f4e16]:
+    - generic [ref=f4e17]:
+      - generic [ref=f4e18]:
+        - heading "Capture the document" [level=1] [ref=f4e19]
+        - paragraph [ref=f4e20]: Session mtpojevg-b50k
+        - generic [ref=f4e21]:
+          - button "Scanner Flatbed at the counter" [ref=f4e22]:
+            - generic [ref=f4e23]: Scanner
+            - generic [ref=f4e24]: Flatbed at the counter
+          - button "File An image or a scanned PDF page" [ref=f4e25]:
+            - generic [ref=f4e26]: File
+            - generic [ref=f4e27]: An image or a scanned PDF page
+          - button "Camera Also captures the live face" [ref=f4e28]:
+            - generic [ref=f4e29]: Camera
+            - generic [ref=f4e30]: Also captures the live face
+        - generic [ref=f4e31]:
+          - generic [ref=f4e33] [cursor=pointer]:
+            - generic [ref=f4e34]: Drop an image here, or choose a file
+            - generic [ref=f4e35]: Nothing leaves this machine. There is no upload.
+          - generic [ref=f4e36]:
+            - button "Drop an image here, or choose a file Nothing leaves this machine. There is no upload." [ref=f4e37]
+            - button "Choose a file" [ref=f4e38]
+      - complementary [ref=f4e39]:
+        - heading "Before we screen it" [level=2] [ref=f4e40]
+        - paragraph [ref=f4e42]: Capture the document and its quality is checked here first. A soft capture cannot be recovered downstream — the machine-readable zone either resolves or it does not.
+  - contentinfo [ref=f4e43]:
+    - list [ref=f4e44]:
+      - listitem [ref=f4e45]:
+        - generic [ref=f4e55]: cryptographic
+        - generic [ref=f4e56]: A signature verifies against a trusted key. Certain.
+      - listitem [ref=f4e57]:
+        - generic [ref=f4e63]: arithmetic
+        - generic [ref=f4e64]: A deterministic check. No model, no key.
+      - listitem [ref=f4e65]:
+        - generic [ref=f4e72]: probabilistic
+        - generic [ref=f4e73]: Inference. It can be wrong.
+      - listitem [ref=f4e74]:
+        - generic [ref=f4e78]: unverified
+        - generic [ref=f4e79]: No check was available. Not the same as passing.

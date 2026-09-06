@@ -1,0 +1,6 @@
+[   31656ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:5173/src/styles/tokens.css?t=1788691293543:0
+[   31656ms] [ERROR] [vite] Failed to reload /src/styles/tokens.css. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:532
+[   31659ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_RESET @ http://localhost:5173/src/screens/OperatingPoint.tsx?t=1788691293543:0
+[   31659ms] [ERROR] [vite] Failed to reload /src/screens/OperatingPoint.tsx. This could be due to syntax errors or importing non-existent modules. (see errors above) @ http://localhost:5173/@vite/client:532
+[   31659ms] [LOG] [vite] server connection lost. Polling for restart... @ http://localhost:5173/@vite/client:1002
+[   46682ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=f33c22da:14335
