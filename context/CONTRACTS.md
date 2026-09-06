@@ -208,7 +208,7 @@ For documents with no real integrity mechanism:
 doc_type: pan
 verify:
   signature: reference_issuer
-  arithmetic: [pan_format_checkchar]
+  arithmetic: [pan_format]
 disclosure: "Signature verified against reference issuer (demonstration)"
 ```
 

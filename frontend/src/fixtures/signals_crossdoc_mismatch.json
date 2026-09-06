@@ -101,7 +101,7 @@
       "trust_class": "arithmetic",
       "hard_fail": false,
       "anchor": "field:id_number",
-      "evidence": "PAN check character F is correct for ABLPG7040",
+      "evidence": "PAN format valid, holder type individual, fifth character matches the surname GHARAT",
       "region": [
         110,
         640,

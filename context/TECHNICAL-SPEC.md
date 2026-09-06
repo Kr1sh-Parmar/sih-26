@@ -94,7 +94,7 @@ A forbidden class firing is itself a signal: an MRZ detected on a Voter ID is su
 Layers A–D are deterministic, need no network, and run in under 15 ms combined. They are the backbone and the fast path.
 
 **A — Intra-document integrity**
-Ed25519 signature over the canonical payload (reference issuer). MRZ five check digits: document number, DOB, expiry, optional data, composite. Verhoeff on the 12-digit Aadhaar. PAN check character. EPIC format. DL state + RTO code.
+Ed25519 signature over the canonical payload (reference issuer). MRZ five check digits: document number, DOB, expiry, optional data, composite. Verhoeff on the 12-digit Aadhaar. PAN structure — holder-type character, and the fifth character against the surname. EPIC format. DL state + RTO code. Only Aadhaar carries a real check digit; see `DECISIONS.md` D23.
 
 **B — Format conformance**
 Field lengths and charset per ICAO 9303. Nationality against ISO 3166-1 alpha-3 (mind MRZ quirks: `D` for Germany, GBR subtypes). Gender codes `M`/`F`/`<`. Date formats.

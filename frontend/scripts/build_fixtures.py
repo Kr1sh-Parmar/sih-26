@@ -292,7 +292,9 @@ CROSSDOC = {
             "document", "A PAN card carries no signature payload, so it has no cryptographic anchor of its own",
             None, 2),
         sig("validation.format.pan.id_number", "validation", 1, "pass", 1.0, "arithmetic", False,
-            "field:id_number", "PAN check character F is correct for ABLPG7040",
+            "field:id_number",
+            "PAN format valid, holder type individual, fifth character matches "
+            "the surname GHARAT",
             [110, 640, 620, 700], 1),
         sig("validation.mrz.checkdigit.composite", "validation", 1, "not_applicable", 1.0, "arithmetic", True,
             "document", "A PAN card has no machine-readable zone", None, 0),
