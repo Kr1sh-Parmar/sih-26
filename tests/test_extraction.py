@@ -557,3 +557,25 @@ def test_a_name_keeps_its_spaces():
 
     ocr.run(ctx)
     assert ctx.fields["name"].value == "PRADEEP KESHAV GHARAT"
+
+
+def test_the_ideographic_space_pp_ocr_pads_with_is_stripped():
+    """PP-OCRv4's recogniser is the Chinese model, and it pads reads with
+    U+3000 rather than a plain space: `02/11/1998　`.
+
+    Every normaliser here happens to survive it because `str.split()` with no
+    argument splits on all Unicode whitespace. That is correct but accidental,
+    and a future normaliser written with `.split(" ")` would break every field
+    the OCR reads. Pin it down.
+    """
+    from modules.extraction import normalize as N
+    from modules.extraction import normalise_field
+
+    assert N.iso_date("02/11/1998　") == "1998-11-02"
+    assert N.name("PRADEEP GHARAT　") == "PRADEEP GHARAT"
+    assert N.id_number("ABLPG7040F　") == "ABLPG7040F"
+
+    field = normalise_field("dob", "02/11/1998　", "ocr", 0.96)
+    assert field is not None and field.value == "1998-11-02"
+    # The raw read is kept verbatim - it is what the officer would see quoted.
+    assert "　" in field.raw
