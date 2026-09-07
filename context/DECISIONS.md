@@ -286,3 +286,83 @@ coverage.
 **Statable as:** "Same PP-OCRv4 models the paper describes, run on ONNX Runtime
 so the whole system has one inference engine. Hindi recognition is a second
 model file we have not yet added."
+
+---
+
+## D25 — Halftone is implemented, measured, and disabled
+
+**Rejected:** shipping `tamper.physical.halftone` as a working check because the spec lists it.
+
+**Why:** it was measured and it does not discriminate. On 200 genuine cards, detection rate equals the false-positive rate at every threshold, under both scorings tried (fraction of disagreeing tiles, and maximum deviation from the modal screen frequency). At the resolution these captures arrive at, print-screen consistency carries no information about tampering.
+
+A check returning a coin flip is worse than no check. It is weighted 0.50 in `reliability.yaml`, so shipping it would inject noise into the score at half the strength of a real signal, and it would occupy an evidence card an officer reads as if it meant something.
+
+So it reports **`inconclusive` naming that reason**, and costs coverage, exactly like the checks blocked by a missing template or a missing class. `physical.halftone()` and its evaluation are kept: on a 600 dpi flatbed scan the screen is genuinely resolved, and re-running `data/tools/eval_tamper.py` on such captures is how this gets revisited.
+
+**Statable as:** "We implemented it, measured it, found it was noise at our capture resolution, and turned it off rather than let it contribute. The measurement is in the repository."
+
+---
+
+## D26 — Tamper thresholds are chosen from genuine documents alone
+
+**Rejected:** tuning each threshold to the point that maximises detection on our own forgeries.
+
+**Why:** CLAUDE.md's rule is to tune on one mutation family and report on another, because a threshold tuned against the forgeries it is then scored on measures the generator rather than the forgery. Choosing the cut from the **clean set only** — the score at which 5% of genuine cards get flagged — is a stronger version of the same discipline: no forgery participates in setting any threshold, so every family is held out by construction.
+
+The 5% budget is an operational choice, not a round number. Tamper signals are weighted probabilistic evidence, never hard fails, so a false positive costs an officer a second look rather than a detention. It is still the number that matters most — a check that misses a forgery costs one signal; a check that accuses genuine documents makes an officer stop reading the whole evidence list.
+
+**Consequence:** the reported numbers are lower than a tuned-on-forgeries version would print. Measured: copy-move 49.5% at 5.0% false positives, ELA 34–36% on splice and photo swap. `data/TAMPERING.md`.
+
+---
+
+## D27 — The layout reference is measured, not drawn
+
+**Rejected:** hand-vectorised per-document templates for the layout geometry check.
+
+**Why:** six templates is nine days of vector work the roadmap says cannot be compressed, and it was the thing blocking `tamper.physical.layout_geometry`. But the check does not need a drawing — it needs to know where each field sits on a genuine card, and 8,320 already-labelled cards say exactly that.
+
+`data/tools/build_layout.py` writes the median normalised centre and spread per class per document type into `config/layout/<doc_type>.json`. It is a better sentence in front of a panel than a template would be: the reference is not our drawing of what a card looks like, it is what several thousand genuine cards did.
+
+**Two limits, both enforced in code:** counts are unique source cards, not files — Roboflow ships five to ten augmented copies of each card and counting files would inflate every number and defeat the guard. And a field measured on fewer than 50 cards is recorded but never checked; `signature` has 25, from one source.
+
+**What it does not replace:** guilloche continuity, which needs the actual line-work of a genuine document and remains blocked (D18).
+
+---
+
+## D28 — `confidence` is certainty, everywhere, including the face score
+
+**Rejected:** carrying the raw cosine on `Signal.confidence` so the risk gate can test it against the review band.
+
+**Why:** two consumers wanted incompatible things from one field. `fusion/gate.py` read it as a score; `fusion/findings.py` multiplies it by reliability in the noisy-OR, which only makes sense if it means certainty. The contract has always said certainty — *"0.0-1.0. For deterministic checks use 1.0"*.
+
+Reading it as a score ran the wrong way. A **confident** impostor — cosine 0.10 against a 0.32 threshold — arrived at fusion as confidence 0.10 and was scored as a barely-there finding. Measured end to end, a genuine pair scored 0.130 and an impostor 0.129.
+
+The face module now emits certainty, scaled so that any score inside the configured review band comes out below 1.0. That is an exact translation of the old band test, and the gate expresses it as *"escalate when the check is not sure"*. The same pair now scores 0.130 and 0.274.
+
+**Worth naming:** this is D10 one layer down. A number that reads plausibly and is wrong in the direction that admits fraudsters, which is the failure mode this system exists to avoid.
+
+---
+
+## D29 — `buffalo_sc` and raw ONNX, not `buffalo_l` and the insightface package
+
+**Rejected:** `InsightFace.FaceAnalysis` with the `buffalo_l` pack, as TECHNICAL-SPEC §4 names.
+
+**Why, on the pack:** the Tier 1 face budget is 320 ms for two faces plus passive liveness (§2, L6). §4 puts `buffalo_l` at 160 ms per face — the entire budget spent before liveness runs. `buffalo_sc` is the same SCRFD-plus-ArcFace pipeline at 16 MB against 289 MB and measures 15 ms for both faces. On our separation check it buys nothing back: genuine median 0.890 against impostor median 0.019.
+
+**Why, on the package:** `FaceAnalysis` downloads its own weights on first use, into a home directory, at whatever moment the first traveller arrives. That is precisely the runtime network call CLAUDE.md rule 3 forbids, and it would stay invisible in a demo right up until the cable came out. It also pulls scikit-image and cython in for a detector we can run on the ONNX Runtime session already in the process.
+
+**What it costs:** about a hundred lines — SCRFD output decode and a five-point similarity alignment — both in `modules/face/`. `scripts/fetch_face_models.py --pack buffalo_l` measures the other side of the trade.
+
+---
+
+## D30 — Passive liveness is not deployed, and says so rather than passing
+
+**Rejected:** shipping the face module without a liveness signal, or letting the check default to `pass` when weights are absent.
+
+**Why:** MiniFASNet ships from Silent-Face-Anti-Spoofing as PyTorch `.pth`. The ONNX mirrors we found need an account; converting the `.pth` needs torch — which lives only in `.venv-train` and must never enter the screening process — plus the model class from that repository, whose licence needs reading before it goes in a submission. That is a decision, not an afternoon.
+
+A spoof check that has not run must never look like one that passed. The signal is `inconclusive` and costs coverage, and the evidence string ends *"Confirm visually."* — at a manned counter the officer is the liveness check, and the console has to say the machine is not helping with this one.
+
+Everything except the weights is written. Dropping `models/face_liveness.onnx` and its sidecar in place starts it returning verdicts with no other change; the registry already warms it and already reports it in the audit log.
+
+**Consequence:** DEMO.md Scene 4 cannot be run as written. That is a scheduling fact, not a surprise on the day.
