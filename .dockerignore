@@ -9,11 +9,25 @@ runs/
 weights/
 
 # Datasets. `data/raw` and `data/processed` are hundreds of megabytes of
-# training inputs the screening path never opens. `data/generator/` and
-# `data/tools/` are build-time tooling.
+# training inputs the screening path never opens.
 data/raw/
 data/processed/
 SIH/
+
+# The archives those directories were unpacked from - 2.3 GB between them, and
+# they were the single largest thing in the first image I built. `.gitignore`
+# has excluded `*.zip` since the beginning; this file did not, and nothing
+# warns you: the build simply succeeds and the image is a few gigabytes larger
+# than it should be. Measure the image, do not assume the ignore file is
+# complete.
+*.zip
+*.tar
+*.tar.gz
+
+# The console has its own image and its own build context (`docker-compose.yml`,
+# the `console` service). Nothing under `api/ core/ fusion/ modules/` reads it,
+# so shipping the React tree inside the screening image serves nobody.
+frontend/
 
 # The build-time *dependency set*. Pillow and Faker never enter the screening
 # image; only the code that would use them, and only because the test suite
