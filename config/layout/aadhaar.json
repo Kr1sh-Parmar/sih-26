@@ -1,0 +1,104 @@
+{
+  "doc_type": "aadhaar",
+  "source": "data/processed/fields, labelled genuine cards",
+  "cards": 1345,
+  "min_cards_to_check": 50,
+  "fields": {
+    "address": {
+      "cx": 0.4984,
+      "cy": 0.5169,
+      "mad_x": 0.278,
+      "mad_y": 0.1799,
+      "n": 86,
+      "boxes": 87
+    },
+    "dob": {
+      "cx": 0.6086,
+      "cy": 0.4242,
+      "mad_x": 0.0683,
+      "mad_y": 0.0834,
+      "n": 450,
+      "boxes": 3225
+    },
+    "emblem": {
+      "cx": 0.1556,
+      "cy": 0.1377,
+      "mad_x": 0.0554,
+      "mad_y": 0.0515,
+      "n": 361,
+      "boxes": 1060
+    },
+    "father_name": {
+      "cx": 0.4359,
+      "cy": 0.4703,
+      "mad_x": 0.2699,
+      "mad_y": 0.2121,
+      "n": 584,
+      "boxes": 585
+    },
+    "gender": {
+      "cx": 0.4406,
+      "cy": 0.4875,
+      "mad_x": 0.0533,
+      "mad_y": 0.0892,
+      "n": 172,
+      "boxes": 2554
+    },
+    "id_number": {
+      "cx": 0.4906,
+      "cy": 0.7543,
+      "mad_x": 0.0544,
+      "mad_y": 0.0689,
+      "n": 718,
+      "boxes": 4465
+    },
+    "issuing_authority": {
+      "cx": 0.515,
+      "cy": 0.1502,
+      "mad_x": 0.0685,
+      "mad_y": 0.0639,
+      "n": 397,
+      "boxes": 1175
+    },
+    "logo": {
+      "cx": 0.2955,
+      "cy": 0.2465,
+      "mad_x": 0.2734,
+      "mad_y": 0.221,
+      "n": 117,
+      "boxes": 144
+    },
+    "name": {
+      "cx": 0.4203,
+      "cy": 0.3445,
+      "mad_x": 0.0591,
+      "mad_y": 0.0683,
+      "n": 473,
+      "boxes": 3278
+    },
+    "person_photo": {
+      "cx": 0.1742,
+      "cy": 0.46,
+      "mad_x": 0.0428,
+      "mad_y": 0.0672,
+      "n": 269,
+      "boxes": 877
+    },
+    "qr_code": {
+      "cx": 0.8209,
+      "cy": 0.6124,
+      "mad_x": 0.0677,
+      "mad_y": 0.095,
+      "n": 269,
+      "boxes": 910
+    },
+    "secondary_id": {
+      "cx": 0.4983,
+      "cy": 0.8273,
+      "mad_x": 0.0463,
+      "mad_y": 0.0995,
+      "n": 25,
+      "boxes": 68
+    }
+  }
+}

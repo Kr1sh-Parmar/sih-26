@@ -1,0 +1,40 @@
+{
+  "doc_type": "pan",
+  "source": "data/processed/fields, labelled genuine cards",
+  "cards": 2071,
+  "min_cards_to_check": 50,
+  "fields": {
+    "dob": {
+      "cx": 0.167,
+      "cy": 0.5767,
+      "mad_x": 0.0504,
+      "mad_y": 0.1486,
+      "n": 2064,
+      "boxes": 3830
+    },
+    "father_name": {
+      "cx": 0.2438,
+      "cy": 0.4776,
+      "mad_x": 0.076,
+      "mad_y": 0.1385,
+      "n": 2029,
+      "boxes": 3762
+    },
+    "id_number": {
+      "cx": 0.2994,
+      "cy": 0.528,
+      "mad_x": 0.2001,
+      "mad_y": 0.162,
+      "n": 2062,
+      "boxes": 3769
+    },
+    "name": {
+      "cx": 0.2352,
+      "cy": 0.4003,
+      "mad_x": 0.0707,
+      "mad_y": 0.1643,
+      "n": 2068,
+      "boxes": 3813
+    }
+  }
+}

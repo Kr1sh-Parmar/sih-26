@@ -1,0 +1,80 @@
+{
+  "doc_type": "dl",
+  "source": "data/processed/fields, labelled genuine cards",
+  "cards": 74,
+  "min_cards_to_check": 50,
+  "fields": {
+    "address": {
+      "cx": 0.2945,
+      "cy": 0.8922,
+      "mad_x": 0.0359,
+      "mad_y": 0.0261,
+      "n": 47,
+      "boxes": 48
+    },
+    "blood_group": {
+      "cx": 0.4875,
+      "cy": 0.6945,
+      "mad_x": 0.0324,
+      "mad_y": 0.01,
+      "n": 48,
+      "boxes": 48
+    },
+    "dob": {
+      "cx": 0.2434,
+      "cy": 0.6902,
+      "mad_x": 0.0133,
+      "mad_y": 0.011,
+      "n": 74,
+      "boxes": 90
+    },
+    "expiry_date": {
+      "cx": 0.525,
+      "cy": 0.3977,
+      "mad_x": 0.01,
+      "mad_y": 0.01,
+      "n": 49,
+      "boxes": 49
+    },
+    "father_name": {
+      "cx": 0.1355,
+      "cy": 0.7832,
+      "mad_x": 0.0243,
+      "mad_y": 0.01,
+      "n": 49,
+      "boxes": 52
+    },
+    "id_number": {
+      "cx": 0.4539,
+      "cy": 0.2562,
+      "mad_x": 0.0197,
+      "mad_y": 0.0185,
+      "n": 73,
+      "boxes": 91
+    },
+    "issue_date": {
+      "cx": 0.3391,
+      "cy": 0.4,
+      "mad_x": 0.01,
+      "mad_y": 0.01,
+      "n": 49,
+      "boxes": 50
+    },
+    "name": {
+      "cx": 0.1336,
+      "cy": 0.6383,
+      "mad_x": 0.0539,
+      "mad_y": 0.0104,
+      "n": 74,
+      "boxes": 88
+    },
+    "person_photo": {
+      "cx": 0.8727,
+      "cy": 0.3414,
+      "mad_x": 0.01,
+      "mad_y": 0.01,
+      "n": 47,
+      "boxes": 48
+    }
+  }
+}

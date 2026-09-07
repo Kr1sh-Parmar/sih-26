@@ -73,8 +73,15 @@ def build_context(image_bytes: bytes, doc_type: str, session_id: str,
 
 
 def screen(ctx: ScreeningContext, *, anchors: TrustAnchorStore | None = None,
-           store=None, uploaded: bool = False) -> Iterator[Event]:
-    """Run the pipeline, yielding events as each stage completes."""
+           store=None, uploaded: bool = False,
+           raw: bytes | None = None) -> Iterator[Event]:
+    """Run the pipeline, yielding events as each stage completes.
+
+    `raw` is the original file bytes. They are threaded through as an argument
+    rather than added to `ScreeningContext`, which is a frozen contract - and
+    only the tampering module wants them, for the two checks that read file
+    structure rather than pixels. Nothing re-decodes them.
+    """
     started = time.perf_counter()
     yield Event("phase", {"phase": "decoding"})
     yield Event("phase", {"phase": "tier1"})
@@ -92,7 +99,7 @@ def screen(ctx: ScreeningContext, *, anchors: TrustAnchorStore | None = None,
         ctx.signals.append(s)
         yield Event("signal", {"signal": s})
 
-    for s in tamper.run(ctx, tier=1, uploaded=uploaded):
+    for s in tamper.run(ctx, tier=1, uploaded=uploaded, raw=raw):
         ctx.signals.append(s)
         yield Event("signal", {"signal": s})
 
@@ -109,7 +116,7 @@ def screen(ctx: ScreeningContext, *, anchors: TrustAnchorStore | None = None,
         # About 15% of documents get here. Running deep forensics on the other
         # 85% would blow the budget for no gain (D6).
         yield Event("phase", {"phase": "tier2"})
-        for s in tamper.run(ctx, tier=2, uploaded=uploaded):
+        for s in tamper.run(ctx, tier=2, uploaded=uploaded, raw=raw):
             if s.tier == 2:
                 ctx.signals.append(s)
                 yield Event("signal", {"signal": s})

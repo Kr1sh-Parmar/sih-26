@@ -1,0 +1,40 @@
+{
+  "doc_type": "visa",
+  "source": "data/processed/fields, labelled genuine cards",
+  "cards": 50,
+  "min_cards_to_check": 50,
+  "fields": {
+    "dob": {
+      "cx": 0.7111,
+      "cy": 0.4635,
+      "mad_x": 0.0163,
+      "mad_y": 0.0278,
+      "n": 50,
+      "boxes": 50
+    },
+    "expiry_date": {
+      "cx": 0.7314,
+      "cy": 0.5483,
+      "mad_x": 0.0197,
+      "mad_y": 0.0268,
+      "n": 49,
+      "boxes": 49
+    },
+    "issue_date": {
+      "cx": 0.5383,
+      "cy": 0.547,
+      "mad_x": 0.016,
+      "mad_y": 0.0259,
+      "n": 50,
+      "boxes": 50
+    },
+    "name": {
+      "cx": 0.3603,
+      "cy": 0.3418,
+      "mad_x": 0.0266,
+      "mad_y": 0.0575,
+      "n": 50,
+      "boxes": 100
+    }
+  }
+}

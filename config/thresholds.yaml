@@ -27,3 +27,49 @@ face:
 gate:
   tamper_clear_below: 0.15
   tamper_escalate_above: 0.25
+
+# Tampering. Every cut here was chosen by data/tools/eval_tamper.py from the
+# *clean* set alone - the value at which 5% of genuine cards get flagged - and
+# no forgery took part in choosing any of them. Detection rates are then
+# measured against families that are all held out by construction. A threshold
+# tuned against the forgeries it is later scored on measures the generator
+# rather than the forgery. Measured numbers: data/TAMPERING.md.
+tamper:
+  # ELA: robust-z of the worst block's error-per-unit-detail against the rest
+  # of the page. Fragile by construction - recompression flattens it (D15).
+  ela_z: 16.8
+
+  # Copy-move: a cluster of keypoint matches sharing one translation offset.
+  # The offset floor rejects the trivial self-match; the count floor rejects
+  # guilloche and repeated text, which genuinely do repeat.
+  copy_move_min_matches: 10
+  copy_move_min_offset_frac: 0.05
+  copy_move_offset_bucket_px: 8
+  # Both ends of a real duplication sit inside a small part of the page. A
+  # repeating security background matches at consistent offsets too, but its
+  # matches are spread everywhere - this is the guard that tells them apart.
+  copy_move_max_span_frac: 0.45
+  copy_move_max_overlap: 0.35
+  # The decisive one. Keypoints proposing a duplication is a hypothesis; the two
+  # regions actually being the same picture is the evidence.
+  copy_move_min_correlation: 0.80
+  # Genuine cards repeat small design elements on purpose. A forger pastes
+  # something field-sized.
+  copy_move_min_region_frac: 0.004
+
+  # SRM residual: blocks whose noise statistic is a robust-z outlier against
+  # the image's own distribution. Inconsistency, not PRNU (D13).
+  noise_outlier_mad: 4.5
+  noise_outlier_frac: 0.078
+
+  # Halftone: fraction of blocks whose dominant screen frequency disagrees
+  # with the document's own modal frequency.
+  halftone_disagree_frac: 0.28
+
+  # Print consistency: coefficient of variation of glyph height within one
+  # printed line. Machine printing is uniform; a retyped line is not.
+  glyph_height_cv: 0.22
+
+  # Layout: robust-z of a field's centre against the reference distribution
+  # built from labelled genuine cards by data/tools/build_layout.py.
+  layout_mad: 5.0

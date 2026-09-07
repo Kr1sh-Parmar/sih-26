@@ -221,7 +221,8 @@ async def _stream_live(socket: WebSocket, pending: dict) -> None:
     result_holder: dict = {}
 
     events = pipeline.screen(ctx, anchors=state["anchors"],
-                             store=state["store"], uploaded=pending["uploaded"])
+                             store=state["store"], uploaded=pending["uploaded"],
+                             raw=pending["image"])
     await ws.stream(events, socket.send_json,
                     on_done=lambda payload: result_holder.update(payload))
 
