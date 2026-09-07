@@ -1,0 +1,80 @@
+# Visa sticker, ICAO MRV format on a passport page.
+#
+# Plain fidelity, per D18 - but it carries an MRZ, so the arithmetic layer has
+# a real anchor here and the check digits are worth something.
+doc_type: visa
+size: [1000, 700]
+background: [240, 236, 246]
+ink: [26, 26, 40]
+guilloche: {enabled: false}
+
+static:
+  - {text: "VISA", at: [0.50, 0.035], size: 22, font: bold, align: center, colour: [60, 50, 110]}
+  - {text: "REPUBLIC OF INDIA", at: [0.50, 0.095], size: 14, font: regular, align: center, colour: [80, 78, 110]}
+
+fields:
+  - class: doc_title
+    kind: text
+    box: [0.360, 0.140, 0.680, 0.200]
+    text: "ENTRY VISA"
+    size: 17
+    font: bold
+
+  - {class: person_photo, kind: photo, box: [0.055, 0.190, 0.255, 0.560]}
+
+  - class: id_number
+    kind: text
+    box: [0.300, 0.225, 0.640, 0.295]
+    label: "Passport No."
+    value: id_number
+    size: 18
+    font: bold
+
+  - class: name
+    kind: text
+    box: [0.300, 0.315, 0.780, 0.385]
+    label: "Name"
+    value: name
+    size: 16
+
+  - class: nationality
+    kind: text
+    box: [0.300, 0.405, 0.500, 0.465]
+    label: "Nationality"
+    value: nationality
+    size: 14
+
+  - class: dob
+    kind: text
+    box: [0.525, 0.405, 0.770, 0.465]
+    label: "Date of Birth"
+    value: dob
+    size: 14
+
+  - class: issue_date
+    kind: text
+    box: [0.300, 0.485, 0.500, 0.545]
+    label: "Issued On"
+    value: issue_date
+    size: 14
+
+  - class: expiry_date
+    kind: text
+    box: [0.525, 0.485, 0.770, 0.545]
+    label: "Valid Until"
+    value: expiry_date
+    size: 14
+
+  - class: issuing_authority
+    kind: text
+    box: [0.300, 0.565, 0.720, 0.625]
+    label: "Issuing Post"
+    value: passport_office
+    size: 14
+
+  - {class: qr_code, kind: qr, box: [0.800, 0.190, 0.950, 0.440]}
+
+  - class: mrz
+    kind: mrz
+    box: [0.030, 0.800, 0.975, 0.945]
+    size: 20

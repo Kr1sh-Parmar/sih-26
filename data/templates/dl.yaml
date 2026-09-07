@@ -1,0 +1,92 @@
+# Driving licence, smart-card format under the Central Motor Vehicles Rules.
+#
+# Plain fidelity, per D18. This is the only document type carrying a blood
+# group, so it is the only source of instances for that class.
+doc_type: dl
+size: [1000, 630]
+background: [244, 249, 244]
+ink: [26, 30, 32]
+guilloche: {enabled: false}
+
+static:
+  - {text: "भारतीय संघ / UNION OF INDIA", at: [0.30, 0.045], size: 15, font: devanagari, align: left}
+  - {text: "DRIVING LICENCE", at: [0.30, 0.115], size: 16, font: bold, align: left, colour: [40, 80, 55]}
+
+fields:
+  - {class: emblem, kind: emblem, box: [0.055, 0.045, 0.150, 0.170]}
+
+  - class: doc_title
+    kind: text
+    box: [0.700, 0.050, 0.960, 0.120]
+    text: "TRANSPORT DEPARTMENT"
+    size: 11
+    font: bold
+
+  - class: id_number
+    kind: text
+    box: [0.310, 0.200, 0.760, 0.278]
+    label: "DL No."
+    value: id_number
+    size: 20
+    font: bold
+
+  - {class: person_photo, kind: photo, box: [0.055, 0.240, 0.265, 0.635]}
+
+  - class: name
+    kind: text
+    box: [0.310, 0.298, 0.760, 0.370]
+    label: "Name"
+    value: name
+    size: 17
+
+  - class: father_name
+    kind: text
+    box: [0.310, 0.390, 0.760, 0.458]
+    label: "Son / Daughter / Wife of"
+    value: father_name
+    size: 14
+
+  - class: dob
+    kind: text
+    box: [0.310, 0.478, 0.540, 0.540]
+    label: "Date of Birth"
+    value: dob
+    size: 15
+
+  - class: blood_group
+    kind: text
+    box: [0.565, 0.478, 0.720, 0.540]
+    label: "Blood Group"
+    value: blood_group
+    size: 15
+
+  - class: issue_date
+    kind: text
+    box: [0.310, 0.560, 0.540, 0.622]
+    label: "Date of Issue"
+    value: issue_date
+    size: 14
+
+  - class: expiry_date
+    kind: text
+    box: [0.565, 0.560, 0.790, 0.622]
+    label: "Valid Till"
+    value: expiry_date
+    size: 14
+
+  - class: address
+    kind: text
+    box: [0.310, 0.645, 0.780, 0.765]
+    label: "Address"
+    value: address
+    size: 11
+    wrap: true
+
+  - class: issuing_authority
+    kind: text
+    box: [0.055, 0.700, 0.270, 0.775]
+    label: "Issuing RTO"
+    value: dl_state
+    size: 14
+
+  - {class: qr_code, kind: qr, box: [0.810, 0.250, 0.960, 0.500]}

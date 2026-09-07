@@ -366,3 +366,29 @@ A spoof check that has not run must never look like one that passed. The signal 
 Everything except the weights is written. Dropping `models/face_liveness.onnx` and its sidecar in place starts it returning verdicts with no other change; the registry already warms it and already reports it in the audit log.
 
 **Consequence:** DEMO.md Scene 4 cannot be run as written. That is a scheduling fact, not a surprise on the day.
+
+---
+
+## D31 — The generator renders programmatically; it does not vectorise specimens
+
+**Rejected:** six hand-vectorised templates traced from PRADO and official specimens, ~1.5 days each, as `DATA.md` and `ROADMAP.md` both specify.
+
+**Why:** vector art produces images with **no annotations**, and annotations are what was actually missing. `ghost_photo`, `barcode`, `hologram` and `doc_title` had zero instances in every scraped source — the detector could not learn them, and `tamper.physical.ghost_missing` was blocked on a class that never appears on any card the model has seen. Nine days of drawing would have produced six beautiful documents and not one label.
+
+A renderer knows where it drew each field, so the YOLO label is a by-product of drawing rather than a second job. All four empty classes filled on the first run.
+
+**What it also bought:** guilloche drawn the way it is actually made — a hypotrochoid, the curve a rose engine traces — so the physical track has continuous line-work to check a break against, rather than a texture that only looks the part. And a `session()` that emits a matched Aadhaar+PAN pair with one signed and one disagreeing, which makes Scene 3 a data file instead of a hope.
+
+**What it costs:** the documents are cleaner than real print. `DATA.md` is right that a model trained only on clean renders falls apart on a scanner, and the print-and-rescan pass is still owed.
+
+---
+
+## D32 — Generated numbers are constructed by the validator, not checked against it
+
+**Rejected:** the generator computing its own check digits, Verhoeff included.
+
+**Why:** two implementations of the same checksum that drift apart produce a set where every document is quietly invalid *and* every validation test still passes, because both sides are testing the same bug. `verhoeff_digit()` in `modules/validation/checksums.py` has carried the docstring *"Used by the synthetic generator"* since it was written, with nothing using it. It does now, along with `mrz.build_td3()` for the TD3 strip.
+
+The identity is also **self-consistent by construction** — one person, one date of birth, one face across every document they hold. Making two documents disagree is then a single deliberate edit, which is exactly the shape Layer D needs to demonstrate.
+
+That last part was not free. The portrait was first picked from the *render* seed rather than the identity, so one person's Aadhaar and PAN carried two different faces. Invisible on a single card and fatal in a session: Scene 3 puts the two side by side, so an officer would have been shown two different people, and the face module would have flagged a generator artefact as a mismatch. The portrait belongs to the identity now, and a test asserts it.

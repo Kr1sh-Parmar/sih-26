@@ -1,0 +1,65 @@
+# PAN card, Income Tax Department format.
+#
+# Plain fidelity, per D18: the full physical track is bought for passport and
+# Aadhaar only, so this carries correct layout, correct fields and a
+# structurally valid number - everything the field detector, OCR and the
+# arithmetic layers need - but no guilloche line-work to check continuity on.
+#
+# PAN is the unsigned half of Scene 3. The signed Aadhaar's verified date of
+# birth becomes ground truth, and this card prints a different one.
+doc_type: pan
+size: [1000, 630]
+background: [237, 240, 247]
+ink: [26, 28, 38]
+guilloche: {enabled: false}
+
+static:
+  - {text: "आयकर विभाग", at: [0.30, 0.045], size: 17, font: devanagari, align: left}
+  - {text: "INCOME TAX DEPARTMENT", at: [0.30, 0.115], size: 15, font: bold, align: left, colour: [60, 66, 92]}
+  - {text: "भारत सरकार / GOVT. OF INDIA", at: [0.30, 0.165], size: 12, font: devanagari, align: left, colour: [95, 98, 115]}
+
+fields:
+  - {class: emblem, kind: emblem, box: [0.055, 0.045, 0.150, 0.170]}
+
+  - class: doc_title
+    kind: text
+    box: [0.680, 0.050, 0.960, 0.125]
+    text: "PERMANENT ACCOUNT NUMBER"
+    size: 11
+    font: bold
+
+  - class: id_number
+    kind: text
+    box: [0.310, 0.255, 0.720, 0.345]
+    label: "Permanent Account Number"
+    value: id_number
+    size: 27
+    font: bold
+
+  - class: name
+    kind: text
+    box: [0.310, 0.375, 0.760, 0.450]
+    label: "नाम / Name"
+    label_font: devanagari
+    value: name
+    size: 18
+
+  - class: father_name
+    kind: text
+    box: [0.310, 0.470, 0.760, 0.545]
+    label: "पिता का नाम / Father Name"
+    label_font: devanagari
+    value: father_name
+    size: 16
+
+  - class: dob
+    kind: text
+    box: [0.310, 0.565, 0.620, 0.640]
+    label: "जन्म तिथि / Date of Birth"
+    label_font: devanagari
+    value: dob
+    size: 17
+
+  - {class: person_photo, kind: photo, box: [0.055, 0.290, 0.265, 0.700]}
+  - {class: signature, kind: signature, box: [0.055, 0.730, 0.265, 0.815]}
+  - {class: qr_code, kind: qr, box: [0.800, 0.320, 0.955, 0.590]}

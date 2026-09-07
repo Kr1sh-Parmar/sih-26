@@ -17,6 +17,15 @@ data/processed/
 # runtime state (sqlite db, dev salt)
 var/
 
+# Build-time font assets, fetched by scripts/fetch_fonts.py. OFL and freely
+# redistributable, but 2 MB of binaries that a clean clone can re-fetch in a
+# second - same treatment as models/.
+data/templates/fonts/*.ttf
+
+# Generated documents. Reproducible from a seed by data/tools/generate_documents.py,
+# so the bytes are not worth committing - the generator is.
+data/processed/generated/
+
 # build-time training environment (CUDA torch, ultralytics). Never used at inference.
 .venv-train/
 runs/

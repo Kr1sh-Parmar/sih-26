@@ -1,0 +1,116 @@
+# Aadhaar PVC card, front.
+#
+# Full fidelity, per D18. Aadhaar is the other document that buys the complete
+# physical track, and it is the one Scene 3 signs - its QR carries the payload
+# whose verified DOB becomes ground truth for the PAN beside it.
+#
+# The number is printed in the 4-4-4 grouping UIDAI uses; `normalize.id_number`
+# strips the spaces before Layer A sees it.
+doc_type: aadhaar
+size: [1000, 640]            # 85.6x54mm, card proportions
+background: [253, 250, 243]
+ink: [30, 30, 36]
+
+guilloche:
+  enabled: true
+  colour: [205, 160, 130]
+  curves: 4
+  opacity: 46
+
+microtext:
+  box: [0.06, 0.930, 0.55, 0.960]
+  text: "GOVERNMENTOFINDIA"
+  colour: [130, 120, 115]
+
+static:
+  - {text: "भारत सरकार",        at: [0.30, 0.045], size: 20, font: devanagari, align: left}
+  - {text: "GOVERNMENT OF INDIA", at: [0.30, 0.115], size: 16, font: bold, align: left, colour: [70, 74, 90]}
+  - {text: "आधार - आम आदमी का अधिकार", at: [0.06, 0.905], size: 12, font: devanagari, align: left, colour: [120, 110, 105]}
+
+fields:
+  - class: emblem
+    kind: emblem
+    box: [0.055, 0.040, 0.150, 0.165]
+
+  - class: doc_title
+    kind: text
+    box: [0.640, 0.045, 0.950, 0.130]
+    text: "AADHAAR"
+    size: 26
+    font: bold
+
+  - class: person_photo
+    kind: photo
+    box: [0.055, 0.230, 0.265, 0.640]
+
+  - class: name
+    kind: text
+    box: [0.310, 0.235, 0.760, 0.310]
+    label: "नाम / Name"
+    label_font: devanagari
+    value: name
+    size: 19
+
+  - class: father_name
+    kind: text
+    box: [0.310, 0.325, 0.760, 0.392]
+    label: "पिता / Father"
+    label_font: devanagari
+    value: father_name
+    size: 15
+
+  - class: dob
+    kind: text
+    box: [0.310, 0.408, 0.560, 0.472]
+    label: "जन्म तिथि / DOB"
+    label_font: devanagari
+    value: dob
+    size: 16
+
+  - class: gender
+    kind: text
+    box: [0.580, 0.408, 0.760, 0.472]
+    label: "लिंग / Gender"
+    label_font: devanagari
+    value: gender
+    size: 16
+
+  - class: address
+    kind: text
+    box: [0.310, 0.488, 0.760, 0.610]
+    label: "पता / Address"
+    label_font: devanagari
+    value: address
+    size: 11
+    wrap: true
+
+  - class: hologram
+    kind: hologram
+    box: [0.800, 0.185, 0.950, 0.320]
+
+  - class: ghost_photo
+    kind: ghost
+    box: [0.800, 0.340, 0.950, 0.560]
+
+  - class: qr_code
+    kind: qr
+    box: [0.800, 0.585, 0.955, 0.850]
+
+  - class: id_number
+    kind: text
+    box: [0.300, 0.660, 0.760, 0.760]
+    value: aadhaar_spaced
+    size: 30
+    font: bold
+
+  - class: secondary_id
+    kind: text
+    box: [0.300, 0.790, 0.700, 0.850]
+    label: "VID"
+    value: vid
+    size: 13
+
+  - class: barcode
+    kind: barcode
+    box: [0.055, 0.700, 0.265, 0.790]
+    value: aadhaar
