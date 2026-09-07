@@ -9,7 +9,7 @@
  * The API is on the same box as the console. localhost is the only host this
  * file ever names, which is what keeps scripts/check-offline.sh passing.
  */
-import type { ScreeningEvent } from "../contracts";
+import type { Band, ScreeningEvent, Signal } from "../contracts";
 import type { FixtureDoc, Replay } from "./mockSocket";
 
 const API =
@@ -115,4 +115,109 @@ export async function isLive(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ------------------------------------------------------------ audit trail
+
+/** One recorded screening. Mirrors screening_events in CONTRACTS.md §8, minus
+ *  the columns the console must never render — there is no raw identity
+ *  number here because the database does not hold one. */
+export interface AuditEvent {
+  id: string;
+  session_id: string;
+  doc_type: string;
+  created_at: string;
+  band: Band;
+  score: number;
+  coverage: number;
+  id_number_hash: string | null;
+  id_number_last4: string | null;
+  officer_id: string | null;
+  model_versions: Record<string, string | null>;
+  signed: boolean;
+  signals: Signal[];
+}
+
+export interface EventPage {
+  total: number;
+  limit: number;
+  offset: number;
+  events: AuditEvent[];
+}
+
+export async function fetchEvents(limit = 25, offset = 0): Promise<EventPage> {
+  const response = await fetch(`${API}/events?limit=${limit}&offset=${offset}`);
+  if (!response.ok) throw new Error("The audit trail could not be read");
+  return response.json();
+}
+
+export interface RescoreResult {
+  event_id: string;
+  doc_type: string;
+  recorded: { band: Band; score: number; coverage: number };
+  rescored: { band: Band; score: number; coverage: number; reason: string | null };
+  changed: boolean;
+}
+
+/**
+ * Re-score one stored event under a different operating point.
+ *
+ * The client does not recompute a verdict — it never has and this is the
+ * endpoint that keeps that true. Fusion is server-side, and a second scorer in
+ * the browser is exactly the thing that drifts and then disagrees with the
+ * audit log it is supposed to explain.
+ */
+export async function rescoreEvent(
+  eventId: string,
+  bands: { green_below: number; amber_below: number; coverage_floor: number },
+): Promise<RescoreResult> {
+  const response = await fetch(`${API}/rescore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_id: eventId, bands }),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(detail.detail ?? "That screening could not be re-scored");
+  }
+  return response.json();
+}
+
+// -------------------------------------------------------------- sessions
+
+/** One field a signed document vouched for, and whether the other agreed.
+ *
+ *  `from_value` and `to_value` are null once the session has expired: they are
+ *  the traveller's own data and are never written to the audit trail, only
+ *  held while they are at the counter. The verdict and the evidence sentence
+ *  outlive them. */
+export interface SessionEdge {
+  field: string;
+  from: string;
+  to: string;
+  agrees: boolean;
+  trust_class: Signal["trust_class"];
+  evidence: string;
+  from_value: string | null;
+  to_value: string | null;
+}
+
+export interface SessionView {
+  session_id: string;
+  documents: {
+    id: string;
+    doc_type: string;
+    band: Band | null;
+    score: number | null;
+    coverage: number | null;
+    signed: boolean;
+    created_at: string;
+  }[];
+  edges: SessionEdge[];
+}
+
+export async function fetchSession(sessionId: string): Promise<SessionView> {
+  const response = await fetch(`${API}/sessions/${sessionId}`);
+  if (!response.ok) throw new Error("That session could not be read");
+  return response.json();
 }

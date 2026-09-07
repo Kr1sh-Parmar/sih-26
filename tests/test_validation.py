@@ -337,3 +337,67 @@ def test_layers_a_to_d_run_inside_the_15ms_budget():
         run(ctx, anchors=anchors)
     per_call_ms = (time.perf_counter() - started) / 20 * 1000
     assert per_call_ms < 15, f"Layers A-D took {per_call_ms:.1f} ms, budget is 15"
+
+
+# ------------------------- unverified reads may not contradict proven values
+
+def test_a_fallback_read_cannot_hard_fail_a_genuine_document():
+    """The worst failure this system can produce, and it was reachable.
+
+    Florence-2 transcribes a date perfectly and then returns CHABRA for
+    CHHABRA (data/EXTRACTION.md). Layer D compared whatever sat in
+    `ctx.fields`, so a one-character misread against a signed payload fired
+    `validation.crossdoc.name_mismatch` - a hard fail on four profiles -
+    carrying trust class `cryptographic`, because the *other* side of the
+    comparison is signed.
+
+    A genuine traveller detained on an OCR error, and the console telling the
+    officer it was certain. That is precisely the laundering of a probabilistic
+    read into a cryptographic verdict that D3 exists to prevent.
+
+    A disagreement between a proven value and an unchecked fallback read is not
+    evidence of tampering; it is evidence the read was unreliable.
+    """
+    prior = signed_aadhaar_prior()
+    ctx = pan_ctx(prior=prior)
+    ctx.fields["name"] = field("PRADEEP KESHAV GHARAX", source="vlm")
+
+    s = by_id(layer_d.run(ctx))["validation.crossdoc.name_mismatch"]
+    assert s.verdict == "inconclusive", (
+        "an unratified fallback read is disputing a cryptographically proven "
+        "field, which can detain a genuine traveller on a transcription error")
+    assert "fallback reader" in s.evidence
+
+
+def test_an_ocr_read_still_hard_fails_a_real_mismatch():
+    """The guard must not have bought safety by going blind.
+
+    Layer D trust propagation is the headline demo and is on the never-cut
+    list; an OCR-sourced disagreement has to keep firing.
+    """
+    ctx = pan_ctx(prior=signed_aadhaar_prior())
+    ctx.fields["name"] = field("PRADEEP KESHAV GHARAX", source="ocr")
+
+    s = by_id(layer_d.run(ctx))["validation.crossdoc.name_mismatch"]
+    assert s.verdict == "fail"
+    assert s.trust_class == "cryptographic"
+
+
+def test_a_fallback_read_cannot_contradict_the_machine_readable_zone():
+    """Same guard, Layer C. `validation.vizmrz.dob_mismatch` is a hard fail on
+    passport, and it is the single highest-value tamper signal - which is
+    exactly why it must not fire on a transcription error."""
+    ctx = passport_ctx()
+    ctx.fields["dob"] = field("1991-08-05", source="vlm")
+
+    s = by_id(layer_c.run(ctx, today=TODAY))["validation.vizmrz.dob_mismatch"]
+    assert s.verdict == "inconclusive"
+    assert "fallback reader" in s.evidence
+
+
+def test_the_comparable_guard_admits_the_sources_that_earned_it():
+    """`qr` is comparable because a signed payload is proven; `mrz` because it
+    carries its own check digits; `ocr` because it is gated on a confidence
+    floor. `vlm` has none of the three."""
+    from modules.validation import COMPARABLE_SOURCES
+    assert COMPARABLE_SOURCES == frozenset({"ocr", "mrz", "qr"})

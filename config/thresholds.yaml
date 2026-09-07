@@ -79,6 +79,47 @@ tamper:
   # printed line. Machine printing is uniform; a retyped line is not.
   glyph_height_cv: 0.22
 
+  # Ghost portrait: structural correlation between the faded reprint and the
+  # printed photograph, after equalising both. A genuine pair is one photograph
+  # printed twice, so it correlates strongly; a swapped portrait does not.
+  # Measured, not guessed - see data/TAMPERING.md.
+  ghost_agreement_min: 0.90
+
   # Layout: robust-z of a field's centre against the reference distribution
   # built from labelled genuine cards by data/tools/build_layout.py.
   layout_mad: 5.0
+
+# Retention. TECHNICAL-SPEC.md section 9: raw face crops do not survive the
+# session TTL, and MinIO holds document images with a session TTL for audit.
+# There is no MinIO here and no background job - eviction is opportunistic, on
+# the next request that touches the map, which is enough for a single-counter
+# process and needs no scheduler to go wrong at 3am.
+#
+# What expires is only the RAW CAPTURE. The screening event, its full signal
+# list and the face embedding are the audit trail and are kept - a decision
+# challenged months later has to be re-scorable (CONTEXT.md section 3).
+retention:
+  # Long enough for an officer to be interrupted mid-screening and come back,
+  # short enough that a busy shift does not accumulate a gigabyte of scans.
+  pending_seconds: 900
+  # Cross-document propagation only matters while the traveller is at the
+  # counter. After this a new session starts, which is the honest behaviour -
+  # stale priors quietly vouching for a stranger is the failure to avoid.
+  session_seconds: 3600
+
+# The VLM fallback. TECHNICAL-SPEC.md section 4.
+vlm:
+  # Hard ceiling. "An unbounded fallback will hang the demo" - the spec is
+  # blunt about it, and the loop checks the deadline between decoded tokens so
+  # it actually stops rather than merely intending to.
+  timeout_seconds: 8.0
+
+  # What a fallback read is worth. Greedy decoding gives no calibrated score, so
+  # inventing one per read would be a number with nothing behind it. Fixed and
+  # modest: the trust class does the real work - `unverified` output cannot
+  # carry a document to GREEN on its own whatever this says.
+  confidence: 0.5
+
+  # Fire when OCR read a field this faintly. Above `ocr.MIN_CONFIDENCE` (0.55)
+  # the read is used as-is; below this the fallback is worth its 8 seconds.
+  low_confidence_below: 0.55

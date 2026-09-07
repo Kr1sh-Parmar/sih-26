@@ -16,7 +16,7 @@ import numpy as np
 
 from core.canonical import doc_hash, signed_fields
 from core.decode import decode
-from core.profiles import load_profile
+from core.profiles import load_config, load_profile
 from core.trust import TrustAnchorStore, Verification
 from fusion.context import ScreeningContext
 from fusion.evidence import cards
@@ -223,3 +223,62 @@ def as_prior(result: Result) -> dict:
         result.ctx.doc_type, result.verification,
         {k: v.value for k, v in result.ctx.fields.items() if k != "signed_payload"},
     )
+
+
+# --------------------------------------------------------------- re-scoring
+
+def profile_with_weights(doc_type: str, weights: dict | None) -> dict:
+    """A profile with some weights overridden, without touching the cached one.
+
+    `load_profile` is `lru_cache`d, so the dict it returns is shared by every
+    request in the process. Mutating it would change the operating point for
+    everyone who screened afterwards - and silently, since nothing re-reads the
+    file. Copy first.
+    """
+    import copy
+
+    profile = load_profile(doc_type)
+    if not weights:
+        return profile
+    clone = copy.deepcopy(profile)
+    clone["weights"].update({str(k): float(v) for k, v in weights.items()})
+    return clone
+
+
+def rescore(signals: list[Signal], profile: dict, bands: dict,
+            signed_fields: set[str] | None = None) -> Verdict:
+    """`fusion.score.score()` with the bands injected instead of read from config.
+
+    ponytail: this restates score()'s ordering - hard fail, then coverage
+    floor, then cryptographic precedence, then bands - because the coverage
+    floor is itself band-dependent, so it cannot simply be re-banded after the
+    fact. Every piece of arithmetic is imported rather than copied; only the
+    order is written twice. `tests/test_rescore.py` asserts this agrees with
+    `score()` exactly when handed the configured bands, which is the guard
+    against the two drifting apart. The real fix is a `bands=` parameter on
+    `score()`, which is a frozen-contract-adjacent change and not mine to make.
+    """
+    from fusion.score import (apply_crypto_precedence, coverage, hard_failures,
+                              score_findings)
+
+    cfg = load_config("bands")
+    cov = coverage(signals, profile)
+
+    hard = hard_failures(signals, profile)
+    if hard:
+        return Verdict("RED", 1.0, cov, [], hard[0].evidence)
+
+    findings = build_findings(signals)
+    if cov < float(bands["coverage_floor"]):
+        return Verdict("AMBER", score_findings(findings, signals, profile), cov,
+                       findings, cfg["messages"]["low_coverage"])
+
+    kept = apply_crypto_precedence(findings, signed_fields or set())
+    value = score_findings(kept, signals, profile)
+    if value < float(bands["green_below"]):
+        band = "GREEN"
+    elif value < float(bands["amber_below"]):
+        band = "AMBER"
+    else:
+        band = "RED"
+    return Verdict(band, value, cov, kept, None)

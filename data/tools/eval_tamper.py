@@ -82,31 +82,61 @@ def score_image(image: np.ndarray, cfg: dict) -> dict:
     }
 
 
+def scraped_cards(limit: int, seed: int):
+    """Real captures of real card layouts, from the held-out detector split."""
+    files = sorted(glob.glob(str(IMAGES / "*.jpg")))
+    if not files:
+        return []
+    random.seed(seed)
+    for path in random.sample(files, min(limit, len(files))):
+        raw = cv2.imread(path)
+        if raw is not None:
+            yield downscale(raw)
+
+
+def generated_cards(limit: int, seed: int):
+    """Our own documents, from `data/generator/`.
+
+    The reason this source exists: the scraped numbers are measured on imagery
+    of unrecorded provenance, which is exactly the question DEMO.md predicts a
+    panel will ask. These are ours, labelled, and reproducible from a seed.
+
+    They are also *cleaner* than any real capture - no scanner noise, no
+    lighting, no print. A false-positive rate measured here is a floor, and the
+    scraped number remains the one to quote.
+    """
+    from data.generator import DOC_TYPES, build
+    for n in range(limit):
+        doc_type = DOC_TYPES[n % len(DOC_TYPES)]
+        yield build(doc_type, seed=seed + n).image
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=120)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--source", choices=("scraped", "generated"),
+                        default="scraped",
+                        help="which genuine set to measure against")
     args = parser.parse_args()
 
-    files = sorted(glob.glob(str(IMAGES / "*.jpg")))
-    if not files:
-        print(f"no genuine cards in {IMAGES}. Build the dataset first:\n"
-              f"  python data/tools/build_field_dataset.py")
+    source = (scraped_cards if args.source == "scraped" else generated_cards)
+    images = list(source(args.limit, args.seed))
+    if not images:
+        print(f"no genuine cards for source {args.source!r}.\n"
+              f"  scraped:   python data/tools/build_field_dataset.py\n"
+              f"  generated: pip install -r requirements-build.txt "
+              f"&& python scripts/fetch_fonts.py")
         return 1
-    random.seed(args.seed)
-    files = random.sample(files, min(args.limit, len(files)))
 
     cfg = load_config("thresholds")["tamper"]
     clean: list[dict] = []
     tampered: dict[str, list[dict]] = {f: [] for f in mutate.FAMILIES}
     halftone_resolved = 0
 
-    print(f"scoring {len(files)} genuine cards x {len(mutate.FAMILIES) + 1} variants")
-    for n, path in enumerate(files, 1):
-        raw = cv2.imread(path)
-        if raw is None:
-            continue
-        image = downscale(raw)
+    print(f"scoring {len(images)} genuine {args.source} cards "
+          f"x {len(mutate.FAMILIES) + 1} variants")
+    for n, image in enumerate(images, 1):
         clean.append(score_image(image, cfg))
         _fraction, _region, tiles = physical.halftone(image, cfg)
         halftone_resolved += 1 if tiles else 0
@@ -114,7 +144,7 @@ def main() -> int:
             mutated, _mask = mutate.apply(family, image, seed=args.seed + n)
             tampered[family].append(score_image(mutated, cfg))
         if n % 20 == 0:
-            print(f"  {n}/{len(files)}")
+            print(f"  {n}/{len(images)}")
 
     cuts = {}
     print(f"\nthresholds, chosen so that {FP_BUDGET:.0%} of genuine cards are flagged")
@@ -157,6 +187,8 @@ def main() -> int:
     print("  ocrb_conformance   needs field boxes; no detector weights deployed")
     print(f"  halftone           the print screen resolved on {halftone_resolved}/"
           f"{len(clean)} genuine captures")
+    print("  guilloche_break    measured three ways and disabled; see data/TAMPERING.md")
+    print("  ghost_missing      a comparison, not a score - measured separately")
     if halftone_resolved == 0:
         print("                     -> reports `inconclusive` on every one of them,")
         print("                        which is the honest answer at this capture")

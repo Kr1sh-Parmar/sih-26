@@ -153,7 +153,7 @@ def test_a_bad_line_length_is_refused_before_the_check_digits_see_it():
                      [[[0, 5], [1, 5], [1, 6], [0, 6]], "L898902C36UTO", 0.9]], None)
 
     original = registry.ocr_engine
-    registry.ocr_engine = lambda: FakeEngine()
+    registry.ocr_engine = lambda *a, **k: FakeEngine()
     try:
         strip, _conf, reason = ocr.read_mrz(np.full((60, 400, 3), 255, np.uint8))
     finally:
@@ -170,7 +170,7 @@ def test_an_out_of_charset_read_is_refused():
                      [[[0, 5], [1, 5], [1, 6], [0, 6]], "L" * 44, 0.9]], None)
 
     original = registry.ocr_engine
-    registry.ocr_engine = lambda: FakeEngine()
+    registry.ocr_engine = lambda *a, **k: FakeEngine()
     try:
         strip, _conf, reason = ocr.read_mrz(np.full((60, 400, 3), 255, np.uint8))
     finally:
@@ -198,7 +198,7 @@ def test_a_well_formed_read_reaches_layer_a_and_its_check_digits_verify():
     ctx.field_boxes["mrz"] = (10, 500, 880, 580)
 
     original = registry.ocr_engine
-    registry.ocr_engine = lambda: FakeEngine()
+    registry.ocr_engine = lambda *a, **k: FakeEngine()
     try:
         signals = ocr.run(ctx)
     finally:
@@ -307,7 +307,7 @@ def test_ocr_never_touches_the_whole_page():
     seen = []
     original = registry.ocr_engine
     engine = registry.ocr_engine()
-    registry.ocr_engine = lambda: (
+    registry.ocr_engine = lambda *a, **k: (
         lambda img, **kw: (seen.append(img.shape), engine(img, **kw))[1])
     try:
         ctx = ctx_for("pan", image=np.full((900, 1400, 3), 255, np.uint8))
@@ -506,7 +506,7 @@ def test_row_bucketing_keeps_one_line_on_one_line():
                      [box(65, 10, 35), "/11", 0.99]], None)
 
     original = registry.ocr_engine
-    registry.ocr_engine = lambda: FakeEngine()
+    registry.ocr_engine = lambda *a, **k: FakeEngine()
     try:
         # Tall enough to take the detector path, which is where the bucketing
         # lives. A wide single-line crop skips the detector entirely now.
@@ -526,7 +526,7 @@ def test_a_multi_line_address_still_reads_top_to_bottom():
                      [box(10, 10), "RAXAUL", 0.9]], None)
 
     original = registry.ocr_engine
-    registry.ocr_engine = lambda: FakeEngine()
+    registry.ocr_engine = lambda *a, **k: FakeEngine()
     try:
         text, _conf = ocr.read(np.full((120, 300, 3), 255, np.uint8))
     finally:
@@ -579,3 +579,84 @@ def test_the_ideographic_space_pp_ocr_pads_with_is_stripped():
     assert field is not None and field.value == "1998-11-02"
     # The raw read is kept verbatim - it is what the officer would see quoted.
     assert "　" in field.raw
+
+
+# ----------------------------------------------- reading the MRZ without a detector
+
+def test_mrz_lines_are_selected_out_of_a_looser_crop():
+    """A crop of the foot of a passport catches the microtext too.
+
+    The two MRZ lines read at exactly 44 characters and were then thrown away
+    because the geometry gate saw four lines. Selecting the matching run keeps
+    the gate's guarantee - the lines must still be the right width - while
+    removing a failure mode where unrelated rows condemned a good read.
+    """
+    from modules.extraction.ocr import select_mrz_lines
+
+    mrz_line = "A" * 44
+    assert select_mrz_lines([mrz_line, mrz_line, "B" * 22, "C" * 18]) == \
+        [mrz_line, mrz_line]
+    assert select_mrz_lines(["X" * 12, mrz_line, mrz_line]) == [mrz_line, mrz_line]
+    # MRV-B geometry, and nothing that matches at all is passed through so the
+    # gate still rejects it with its own message.
+    assert select_mrz_lines(["D" * 36, "D" * 36]) == ["D" * 36, "D" * 36]
+    assert select_mrz_lines(["E" * 20, "F" * 19]) == ["E" * 20, "F" * 19]
+
+
+def test_a_misread_mrz_is_reported_unreadable_rather_than_tampered():
+    """The safety property of the no-detector path.
+
+    Measured, this reader is ~70% character-exact on an untargeted band, so a
+    check-digit failure is far more likely a misread than a forgery. Storing
+    such a strip fires the composite check digit, which is a hard fail, and
+    detains a genuine traveller on an OCR error.
+    """
+    from modules.extraction import _check_digits_verify
+    from modules.extraction import mrz as M
+
+    good = M.build_td3(surname="GHARAT", given_names="PRADEEP",
+                       document_number="Z1234567", birth_date="1991-08-04",
+                       sex="M", expiry_date="2030-01-01")
+    assert _check_digits_verify(good)
+
+    lines = good.splitlines()
+    corrupted = lines[0] + "\n" + lines[1][:5] + ("9" if lines[1][5] != "9" else "8") \
+        + lines[1][6:]
+    assert not _check_digits_verify(corrupted), (
+        "a corrupted strip passed its own check digits")
+    assert not _check_digits_verify("nonsense")
+
+
+def test_ocr_lang_is_live_config_rather_than_a_claim():
+    """`extract.ocr_lang` was read by nothing. Three profiles declare Hindi."""
+    from core.profiles import DOC_TYPES, load_profile
+    from modules.extraction.ocr import SECOND_SCRIPT
+
+    declaring = [d for d in DOC_TYPES
+                 if SECOND_SCRIPT in load_profile(d)["extract"].get("ocr_lang", [])]
+    assert set(declaring) == {"aadhaar", "voter_id", "dl"}, declaring
+
+
+def test_a_hindi_profile_says_why_a_field_was_unreadable():
+    """The bundled recogniser returns empty on Devanagari, so a Hindi-only field
+    is `inconclusive` for a reason an officer cannot otherwise guess - and would
+    otherwise re-capture a document that reads the same way every time."""
+    import numpy as np
+
+    from core import registry
+    from modules.extraction import ocr
+
+    if registry.devanagari_rec() is not None:
+        pytest.skip("the Devanagari recogniser is deployed")
+
+    ctx = ctx_for("aadhaar", image=np.full((400, 700, 3), 250, np.uint8))
+    ctx.field_boxes["name"] = (40, 40, 400, 110)
+    original = registry.ocr_engine
+    registry.ocr_engine = lambda *a, **k: (lambda *_a, **_k: ([], None))
+    try:
+        signals = {s.id: s for s in ocr.run(ctx)}
+    finally:
+        registry.ocr_engine = original
+
+    evidence = signals["extraction.ocr.name.confidence"].evidence
+    assert "Devanagari reader is not deployed" in evidence

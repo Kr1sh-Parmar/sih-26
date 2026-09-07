@@ -46,6 +46,10 @@ needs_models = pytest.mark.skipif(
     reason="face weights are not in models/ yet - run scripts/fetch_face_models.py")
 needs_faces = pytest.mark.skipif(
     not FACES, reason="no synthetic faces in data/raw/face (gitignored)")
+needs_liveness = pytest.mark.skipif(
+    not registry.available(registry.LIVENESS),
+    reason="no models/face_liveness.onnx - run "
+           ".venv-train/Scripts/python scripts/convert_liveness.py")
 
 
 def ctx_for(doc_type="passport", image=None, **kw):
@@ -343,3 +347,78 @@ def test_tier_one_face_verification_stays_inside_its_320ms_budget():
         face.run(ctx)
     per_call_ms = (time.perf_counter() - started) * 1000 / runs
     assert per_call_ms < 320, f"tier 1 face took {per_call_ms:.0f} ms"
+
+
+# ------------------------------------------------------------------- liveness
+
+@needs_liveness
+def test_the_liveness_input_contract_is_recorded_and_matches_the_code():
+    """Colour order and input range are model facts, not preferences.
+
+    Both were guessed wrong while the weights did not exist, and neither guess
+    raises - the network returns three plausible probabilities for an image it
+    was never trained on. The sidecar records what the export assumed so the
+    two cannot drift apart silently.
+    """
+    meta = registry.metadata(registry.LIVENESS)
+    assert meta.get("colour_order") == "BGR"
+    assert "not normalised" in meta.get("input_range", "")
+    assert meta.get("licence") == "Apache-2.0", "attribution must survive"
+
+
+@needs_liveness
+@needs_faces
+def test_a_genuine_face_reads_as_live_and_a_simulated_spoof_does_not():
+    """The direction check. Not a spoof-rejection rate - see data/FACE.md.
+
+    This is the test that would have caught dividing the input by 255: under
+    that bug every genuine face scored 0.006 and the check rejected everyone.
+    A synthesised print is not a print, so what is asserted is the separation,
+    with a wide margin, rather than any particular rate.
+    """
+    import importlib.util
+    import random
+
+    spec = importlib.util.spec_from_file_location(
+        "eval_liveness", ROOT / "scripts" / "eval_liveness.py")
+    ev = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ev)
+
+    live_scores, spoof_scores = [], []
+    for index in range(min(8, len(FACES))):
+        image = cv2.imread(FACES[index])
+        face = detector.largest(detector.detect(image))
+        if face is None:
+            continue
+        rng = random.Random(index)
+        live_scores.append(liveness.score(image, face["box"]))
+        for attack in (ev.print_attack, ev.screen_attack):
+            spoof_scores.append(liveness.score(attack(image, rng), face["box"]))
+
+    assert len(live_scores) >= 4 and len(spoof_scores) >= 8
+    assert np.median(live_scores) > 0.5, (
+        f"genuine faces read as spoofs (median {np.median(live_scores):.3f}) - "
+        f"check colour order and input range against the sidecar")
+    assert np.median(spoof_scores) < 0.1, (
+        f"simulated spoofs read as live (median {np.median(spoof_scores):.3f})")
+
+
+@needs_liveness
+@needs_faces
+def test_a_deployed_liveness_signal_reports_a_verdict_not_a_gap():
+    ctx = ctx_for(image=card_with(portrait(0)))
+    ctx.faces["live"] = cv2.imread(FACES[0])
+    passive = by_id(face.run(ctx))["face.liveness.passive"]
+    assert passive.verdict in ("pass", "fail"), passive.evidence
+    assert passive.region is not None
+    assert "%" not in passive.evidence, "no percentage of a probability (D10)"
+
+
+@needs_liveness
+def test_liveness_confidence_is_certainty_not_the_raw_score():
+    """D28. A confident spoof must reach fusion as high confidence, or it is
+    scored as a barely-there finding - the D10 failure one layer down."""
+    band = tuple(load_config("thresholds")["face"]["liveness"]["uncertain_band"])
+    assert face.certainty(0.02, band) == 1.0, "a confident spoof must be certain"
+    assert face.certainty(0.99, band) == 1.0, "a confident live read must be certain"
+    assert face.certainty(sum(band) / 2, band) < 0.5, "mid-band must be uncertain"

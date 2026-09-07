@@ -67,7 +67,19 @@ def score(image: np.ndarray, box) -> float:
     if patch.shape[:2] != (size, size):
         patch = cv2.resize(patch, (size, size), interpolation=cv2.INTER_LINEAR)
 
-    blob = patch[:, :, ::-1].transpose(2, 0, 1)[None].astype(np.float32) / 255.0
+    # BGR, and **not** divided by 255. Both halves of that were wrong when this
+    # file was written against a model that did not exist yet, and both are the
+    # kind of wrong that never raises - the network returns three plausible
+    # probabilities either way, just for an image it was never trained on.
+    #
+    # Upstream feeds `cv2.imread` output through their own `ToTensor`, which is
+    # not torchvision's: it transposes HWC to CHW and calls `.float()`, with no
+    # channel swap and no scaling. So the weights expect raw 0-255 BGR.
+    # Measured, on 60 faces: with the division every genuine face scored 0.006
+    # live and the check rejected 100% of real people; without it, 0.968 against
+    # 0.001 for a simulated spoof. The sidecar records `colour_order` and
+    # `input_range` so the next person does not have to rediscover this.
+    blob = patch.transpose(2, 0, 1)[None].astype(np.float32)
     sess = session(LIVENESS)
     logits = np.asarray(sess.run(None, {sess.get_inputs()[0].name: blob})[0]).ravel()
 

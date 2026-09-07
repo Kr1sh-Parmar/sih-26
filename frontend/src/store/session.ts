@@ -8,7 +8,7 @@
  * documents carry no cryptographic integrity today.
  */
 import { create } from "zustand";
-import type { Band } from "../contracts";
+import type { Band, TrustClass } from "../contracts";
 
 export interface SessionDocument {
   id: string;
@@ -20,14 +20,26 @@ export interface SessionDocument {
   fixture: string;
 }
 
-/** One field the signed document vouches for, and whether the other agrees. */
+/** One field the signed document vouches for, and whether the other agrees.
+ *
+ *  The two values are nullable on purpose. They are the traveller's own name
+ *  and date of birth, so they are never written to the audit trail — they live
+ *  only in the session, for as long as the traveller is at the counter. Once
+ *  that expires the edge keeps its verdict, its trust class and its evidence
+ *  sentence, and loses the two values. That is the retention rule working, not
+ *  a gap, and the screen says so rather than rendering an empty cell. */
 export interface PropagationEdge {
   field: string;
   from: string;
   to: string;
-  fromValue: string;
-  toValue: string;
+  fromValue: string | null;
+  toValue: string | null;
   agrees: boolean;
+  /** Never hidden. A finding whose certainty an officer cannot see is a
+   *  number, and flattening certainty into one score is the thing this system
+   *  exists not to do (MODULES.md, officer console pitfalls). */
+  trustClass: TrustClass;
+  evidence: string;
 }
 
 interface SessionState {

@@ -5,9 +5,9 @@ module is the only place the two meet. It runs what can actually be run and is
 explicit about what cannot - three families are blocked by something structural
 rather than by effort, and each says which:
 
-  guilloche        no vectorised template exists for any document type yet
-  ghost portrait   `ghost_photo` has zero instances in the training set, so
-                   the detector will never emit the box the check would read
+  guilloche        measured on documents that carry a real one, three ways,
+                   and none of them separates a break from ordinary variation -
+                   see data/TAMPERING.md
   stamps           the 22-class ontology has no stamp class and no stamp
                    detector is deployed
   halftone         measured, and it does not work at this capture resolution -
@@ -61,11 +61,9 @@ BLOCKED = {
         "arrive at, the measurement does not separate altered documents from "
         "genuine ones",
     "tamper.physical.guilloche_break":
-        "The security background pattern was not checked - it needs a reference "
-        "drawing of a genuine document of this type, which we have not built",
-    "tamper.physical.ghost_missing":
-        "The ghost portrait was not checked - the field detector has no training "
-        "examples of one, so it never locates it",
+        "The security background pattern was not checked - measured three ways "
+        "on documents that carry a real one, and none of them separates a break "
+        "from ordinary variation in the pattern",
     "tamper.stamp.duplicate":
         "Stamps were not compared - no stamp detector is deployed and the field "
         "ontology has no stamp class",
@@ -107,6 +105,8 @@ def run(ctx: ScreeningContext, *, tier: int = 1, uploaded: bool = False,
 
         if sid in BLOCKED:
             out.append(_blocked(sid))
+        elif sid == "tamper.physical.ghost_missing":
+            out.append(physical.run_ghost(ctx, cfg))
         elif sid == "tamper.physical.layout_geometry":
             out.append(physical.run_layout(ctx, cfg))
         elif sid == "tamper.physical.ocrb_conformance":

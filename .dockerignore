@@ -1,0 +1,51 @@
+# Keep the build context small and keep CUDA out of the screening image.
+
+# The training environment. Torch, torchvision, ultralytics - gigabytes, and
+# every one of them a thing CLAUDE.md rule 2 says must not be in this process.
+.venv-train/
+.venv/
+runs/
+*.pt
+weights/
+
+# Datasets. `data/raw` and `data/processed` are hundreds of megabytes of
+# training inputs the screening path never opens. `data/generator/` and
+# `data/tools/` are build-time tooling.
+data/raw/
+data/processed/
+SIH/
+
+# The build-time *dependency set*. Pillow and Faker never enter the screening
+# image; only the code that would use them, and only because the test suite
+# runs in the image (see the verify profile in docker-compose.yml) and
+# tests/test_tamper.py imports data/tools/mutate.py.
+#
+# data/generator/ and data/tools/ therefore stay in the image while their
+# dependencies do not - so the generator tests skip there rather than run, and
+# nothing on the screening path can import a downloader. That last part is not
+# a convention: tests/test_offline.py enforces it by walking the AST.
+requirements-build.txt
+
+# Runtime state. `var/` is a volume; baking a database into the image would
+# ship one machine's screening history to every other machine.
+var/
+*.db
+
+# Local noise.
+.git/
+.github/
+.claude/
+.pytest_cache/
+__pycache__/
+*.pyc
+.playwright-mcp/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+infooo.pdf
+
+# NOT ignored, deliberately:
+#   models/     baked in - that is the offline claim (CLAUDE.md rule 3)
+#   config/     profiles, weights, bands, the measured layout reference
+#   profiles/   the six document profiles
+#   tests/      so `docker compose run api pytest` can prove the image

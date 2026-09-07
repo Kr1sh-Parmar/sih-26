@@ -249,23 +249,28 @@ Single `docker compose up`. No model downloads at runtime. **Verify the offline 
 ## 12. Repository layout
 
 ```
-screening/
+sih/
 ├── CLAUDE.md
-├── docs/
+├── context/               these documents (CONTRACTS · MODULES · DECISIONS · DATA · ...)
+├── Dockerfile             the screening image; models baked in
+├── docker-compose.yml     api + console + an offline verify profile
 ├── api/
 │   ├── main.py            routes
 │   ├── websocket.py       streaming results
-│   └── router.py          profile selection
+│   └── router.py          orchestration: decode once, route, tier, fuse
 ├── core/
 │   ├── decode.py          decode ONCE
 │   ├── quality.py         blur, brightness, size gates
-│   ├── preprocess.py      deskew, perspective correct
+│   ├── canonical.py       field order, canonicalisation, doc hash
+│   ├── profiles.py        profile + config loading, weights, reliability
+│   ├── trust.py           trust anchor store, signature verification
+│   ├── store.py           SQLite: events, anchors, face gallery, watchlist
 │   └── registry.py        ONNX session registry, warm at startup
 ├── modules/
-│   ├── extraction/        detect · ocr · mrz · qr · vlm · ratify · normalize
+│   ├── extraction/        detect · ocr · mrz · qr · normalize
 │   ├── validation/        layer_a..layer_f, each a pure function
-│   ├── tamper/            physical/ · digital/ · stamps.py
-│   └── face/              verify · gallery · liveness · calibrate
+│   ├── tamper/            physical.py · digital.py
+│   └── face/              detect · embed · liveness · gallery
 ├── fusion/
 │   ├── signal.py          FROZEN — see CONTRACTS.md
 │   ├── context.py         FROZEN
@@ -274,11 +279,33 @@ screening/
 │   └── evidence.py        card assembly and ordering
 ├── issuer/                reference issuer — OFFLINE, not importable by api/
 ├── profiles/              passport · visa · aadhaar · pan · voter_id · dl
-├── config/                reliability.yaml · thresholds.yaml · bands.yaml
-├── models/                ONNX weights, baked into image
-├── data/                  generator/ · templates/ · ground_truth/
-├── ui/                    React officer console
+├── config/                reliability · thresholds · bands · layout/
+├── models/                ONNX weights, baked into the image, gitignored
+├── data/
+│   ├── generator/         synthetic documents: identity · render · guilloche
+│   ├── templates/         six layout specs + the Noto fonts
+│   └── tools/             dataset build, training, evaluation, mutation
+├── scripts/               build-time fetchers and the training wrapper
+├── frontend/              React officer console
 └── tests/
 ```
 
-`issuer/` must not be importable from `api/`. Enforce it with a lint rule. The reference issuer is out-of-band tooling, not part of the screening path.
+**Where this diverges from the earlier draft**, so a reader is not sent looking
+for files that were never written:
+
+- `docs/` is `context/`; `ui/` is `frontend/`.
+- `core/preprocess.py` does not exist. Deskew and perspective correction were
+  never needed separately — `core/decode.py` downscales once and the field
+  detector works on the whole page.
+- `modules/tamper/` is two flat modules, not `physical/`, `digital/` and
+  `stamps.py`. There is no stamp detector: the 22-class ontology has no stamp
+  class, and `modules/tamper/__init__.py` says so in the evidence string rather
+  than reporting a check it cannot run.
+- `modules/face/` has no `calibrate.py`; calibration is build-time tooling and
+  lives at `data/tools/calibrate_face.py`.
+- `data/ground_truth/` is not a directory. Forgery masks are written beside
+  their images by `data/tools/generate_documents.py --forgeries`.
+- The store is SQLite, not Postgres, and there is no MinIO. See the header of
+  `docker-compose.yml`.
+
+`issuer/` must not be importable from `api/`. Enforced by `tests/test_contracts.py::test_the_issuer_is_not_importable_from_the_screening_path`, which is a test rather than a lint rule because it fails in CI where a linter would need configuring. The reference issuer is out-of-band tooling, not part of the screening path.

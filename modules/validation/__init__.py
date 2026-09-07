@@ -33,6 +33,36 @@ def emit(profile: dict, sid: str, verdict: str, evidence: str, *,
     )
 
 
+#: Sources whose reading is exact enough to *contradict* a value that has been
+#: proven cryptographically or read from a machine-readable zone.
+#:
+#: `vlm` is deliberately absent. The Florence-2 fallback transcribes a date
+#: correctly and then returns CHABRA for CHHABRA - see data/EXTRACTION.md. That
+#: is fine for filling a gap in an evidence list and fatal for a comparison: a
+#: one-character misread against a signed payload fires
+#: `validation.crossdoc.name_mismatch`, which is a hard fail on four profiles,
+#: carrying trust class `cryptographic` because the *other* side of the
+#: comparison is signed. A genuine document would be detained on an OCR error,
+#: reported with the strongest certainty the system has.
+#:
+#: A disagreement between a proven value and an unchecked fallback read is not
+#: evidence of tampering. It is evidence that the read was unreliable, and the
+#: honest verdict is `inconclusive` - which costs coverage, because agreement
+#: genuinely was not established (D9).
+COMPARABLE_SOURCES = frozenset({"ocr", "mrz", "qr"})
+
+
+def source_of(ctx: ScreeningContext, field: str) -> str | None:
+    f = ctx.fields.get(field)
+    return f.source if f else None
+
+
+def comparable(ctx: ScreeningContext, field: str) -> bool:
+    """True when this field was read well enough to dispute a proven value."""
+    f = ctx.fields.get(field)
+    return bool(f and f.value and f.source in COMPARABLE_SOURCES)
+
+
 def value_of(ctx: ScreeningContext, field: str) -> str | None:
     f = ctx.fields.get(field)
     return f.value if f and f.value else None

@@ -180,6 +180,24 @@ class Store:
         ).fetchall()
         return [self._event_row(r) for r in rows]
 
+    def recent_events(self, limit: int = 50, offset: int = 0) -> list[dict]:
+        """Newest first, for the audit table.
+
+        Deliberately returns the full row, signal list included. The console
+        opens an event to show what was recorded, and the whole premise of
+        storing signals rather than cards is that the record is sufficient on
+        its own. Trimming it here would mean a second round trip to prove that.
+        """
+        rows = self._conn.execute(
+            "SELECT * FROM screening_events ORDER BY created_at DESC, id DESC "
+            "LIMIT ? OFFSET ?",
+            (max(1, min(int(limit), 500)), max(0, int(offset))),
+        ).fetchall()
+        return [self._event_row(r) for r in rows]
+
+    def count_events(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM screening_events").fetchone()[0]
+
     @staticmethod
     def _event_row(row: sqlite3.Row) -> dict:
         d = dict(row)

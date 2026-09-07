@@ -13,10 +13,12 @@ downloaded at inspection time.
 |---|---|---|---|
 | Detection | SCRFD `det_500m` (insightface `buffalo_sc`) | 2.5 MB | **4 ms** |
 | Embedding | ArcFace `w600k_mbf`, 512-d | 13.6 MB | **4 ms** |
-| Passive liveness | MiniFASNet | — | **not deployed** |
+| Passive liveness | MiniFASNet V2, 2.7 / 80x80 | 1.7 MB | **7 ms** |
 
-Two faces plus margin is about **15 ms of the 320 ms** Tier 1 budget
-(TECHNICAL-SPEC.md §2, L6).
+A full Tier 1 face pass — detect and embed both faces, plus passive liveness —
+measures **p50 103 ms, p95 143 ms** against the 320 ms budget
+(TECHNICAL-SPEC.md §2, L6). The three model calls are ~15 ms of that; the rest
+is the fallback chain and the crops.
 
 ### Why `buffalo_sc` and not `buffalo_l`
 
@@ -111,39 +113,95 @@ in the direction that admits fraudsters.
 
 ---
 
-## Not deployed: passive liveness
+## Passive liveness — deployed 2026-09-07
 
-MiniFASNet ships from Silent-Face-Anti-Spoofing as PyTorch `.pth`. The ONNX
-mirrors found need an account; converting the `.pth` needs torch — which lives
-only in `.venv-train` and must never enter the screening process — plus the
-model class from that repository, whose licence needs reading before it goes in
-a submission. That is a decision, not an afternoon.
+Converted from the Silent-Face-Anti-Spoofing `.pth` by
+`scripts/convert_liveness.py`, which runs under `.venv-train` because it needs
+torch and torch must never enter the screening process. **Apache-2.0**, so the
+weights redistribute with attribution; the sidecar carries the source, both
+upstream hashes and the licence.
 
-Everything except the weights is written. `modules/face/liveness.py` carries the
-full inference path, `core/registry.py` already warms `face_liveness` and already
-reports it in the audit log; dropping `models/face_liveness.onnx` and its sidecar
-in place starts it returning verdicts with no other change.
+D30 said this was blocked on a licence read and a conversion. Both are done.
 
-Until then the signal is **`inconclusive`, and costs coverage**:
+### The preprocessing was wrong, and silently
 
-> Whether the person at the camera is live was not checked — the passive
-> liveness model is not deployed. Confirm visually.
+`modules/face/liveness.py` was written before the weights existed, so its input
+contract was a guess. Both halves of the guess were wrong:
 
-A spoof check that has not run must never look like one that passed. At a manned
-counter the officer is the liveness check, and the console has to say the machine
-is not helping with this one.
+| | Guessed | Actual |
+|---|---|---|
+| Colour order | RGB | **BGR** |
+| Input range | `/ 255.0` | **raw 0-255, not normalised** |
 
-**Scene 4 of the demo cannot be run as written** until those weights land.
+Upstream feeds `cv2.imread` output through *their own* `ToTensor`, which is not
+torchvision's: it transposes HWC to CHW and calls `.float()`, with no channel
+swap and no scaling.
 
----
+Neither error raises. The network returns three plausible probabilities either
+way — for an image it was never trained on. Measured on 60 faces, with the
+division in place **every genuine face scored 0.006 live and the check rejected
+100% of real people**. Without it, 0.968.
+
+The export's own verification could not have caught this: it compared torch and
+onnxruntime on a **black frame**, and zeros are invariant under scaling. The
+reference is a deterministic ramp now, so it varies with the input range.
+
+### Direction check against simulated attacks
+
+`python scripts/eval_liveness.py --limit 120`. 120 SFHQ faces, each also
+rendered as a simulated print and a simulated phone screen — tone compression,
+halftone, paper grain and a paper edge for the print; RGB subpixel stripe,
+moiré, glare and a bezel for the screen. MiniFASNet crops at 2.7x the face box
+because the giveaways live in that margin, so the margin is where the artefacts
+are drawn.
+
+| Condition | n | median live probability | passes as live |
+|---|---|---|---|
+| genuine | 120 | **0.973** | 83.3% |
+| simulated print | 120 | **0.001** | 1.7% |
+| simulated screen | 120 | **0.001** | 3.3% |
+
+At the configured `passive_pass: 0.60` — FRR 16.7%, FAR 2.5%.
+
+**This is not a spoof-rejection rate and must not be quoted as one.** A
+synthesised halftone is not a print and a synthesised moiré is not a phone
+screen. What it establishes is that the model is wired correctly and separates
+by three orders of magnitude; it is the test that caught the `/255`.
+
+Two further caveats that both push the same way:
+
+- **The "genuine" faces are synthetic.** SFHQ is StyleGAN output, not a camera
+  capture. A liveness model may reasonably find generated faces odd, so the
+  16.7% false rejection is probably pessimistic — and it is measured on the
+  wrong domain either way.
+- **The threshold was not re-fitted on this data** and should not be. Following
+  D26, an operating point chosen against simulated attacks would measure the
+  simulator. `passive_pass` stays at its configured 0.60 until real captures
+  exist.
+
+**Still owed, and it is the real test:** an actual printed photo and an actual
+phone screen, on the demo camera, per MODULES.md.
 
 ## Also not done
 
-- **Active liveness** (blink EAR) needs a frame sequence the API does not carry;
-  it reports that rather than a verdict. Cut-list item 2.
-- **Bias evaluation** on FairFace / RFW. Phase 3, and a compliance item rather
-  than a nice-to-have — NIST FRVT demographic disparities are real and the gap
-  has to be reported, not discovered by a panel.
+- **Active liveness** (blink EAR) is not built. It needs a *sequence* of frames
+  and the API accepts one live image, so the work is an API and console change
+  rather than a face-module one. `face.liveness.active` reports that rather
+  than a verdict. Cut-list item 2, and passive liveness — now deployed — is the
+  one that covers the realistic threat at a manned counter.
+- **Bias evaluation: UNMEASURED.** Not "small" — unmeasured. `scripts/eval_bias.py`
+  is written and runs the moment either dataset is on disk, but FairFace ships
+  its images through Google Drive and RFW requires signing a licence, so neither
+  can be fetched unattended here.
+
+  Worth knowing before anyone runs it: **FairFace has one image per person.** No
+  identity labels means no genuine pairs, so it yields a false *match* rate by
+  group and cannot produce false rejection at all. RFW carries identities and
+  gives both halves. The harness does whichever the data supports and says which.
+
+  NIST FRVT found demographic false-match differentials above an order of
+  magnitude across algorithms. An unmeasured system is not a system without a
+  disparity, and that sentence is the honest answer to the question.
 - **Spoof testing** against an actual printed photo and an actual phone screen.
   Blocked on liveness weights. Untested liveness is theatre.
 - **1:N gallery at scale.** It works and is tested, but `store.search_faces` is
@@ -161,3 +219,8 @@ is not helping with this one.
 | 2026-09-07 | `face.*` weight gap found and fixed in all six profiles |
 | 2026-09-07 | `confidence` corrected from score to certainty; gate updated to match |
 | 2026-09-07 | Face-crop sharpness made scale-invariant — the raw Laplacian variance penalised close-up captures |
+| 2026-09-07 | Passive liveness converted from Apache-2.0 weights and deployed |
+| 2026-09-07 | Liveness preprocessing corrected: BGR, and no `/255` — the guess had been rejecting 100% of genuine faces |
+| 2026-09-07 | Export reference changed from a black frame to a ramp; zeros could not catch a scaling error |
+| 2026-09-07 | 1:1 verified against generated documents: genuine median 0.866, impostor max 0.229 |
+| 2026-09-07 | Bias harness written; disparity recorded as unmeasured |

@@ -169,6 +169,97 @@ def glyph_height_cv(patch: np.ndarray) -> tuple[float, int]:
     return float(heights.std() / mean), int(heights.size)
 
 
+# --------------------------------------------------------------- ghost portrait
+
+def ghost_agreement(image: np.ndarray, photo_box, ghost_box) -> float:
+    """How alike the printed portrait and the ghost portrait are, 0 to 1.
+
+    The ghost is a faded greyscale reprint of the same photograph, so on a
+    genuine document the two carry the same face. A forger who replaces the
+    portrait and leaves the ghost alone leaves two different people on one page
+    - and unlike most of this module, that is a *comparison* rather than a
+    texture statistic, so it does not care how the document was printed.
+
+    Correlated on a small greyscale thumbnail with its own mean and contrast
+    removed. The ghost is printed lighter and softer than the portrait by
+    design, so comparing raw intensities would report every genuine document as
+    a mismatch; what has to match is the structure, not the exposure.
+    """
+    def thumb(box):
+        x1, y1, x2, y2 = (int(v) for v in box)
+        patch = image[max(0, y1):y2, max(0, x1):x2]
+        if patch.size == 0 or min(patch.shape[:2]) < 8:
+            return None
+        small = cv2.resize(to_gray(patch), (48, 64), interpolation=cv2.INTER_AREA)
+        small = small.astype(np.float32)
+        # Equalising first is what makes a faded reprint comparable with the
+        # portrait it was made from.
+        small = cv2.equalizeHist(small.astype(np.uint8)).astype(np.float32)
+        return small - small.mean()
+
+    a, b = thumb(photo_box), thumb(ghost_box)
+    if a is None or b is None or a.std() < 1e-3 or b.std() < 1e-3:
+        return -1.0
+    return float(cv2.matchTemplate(a, b, cv2.TM_CCOEFF_NORMED)[0, 0])
+
+
+def run_ghost(ctx, cfg: dict) -> Signal:
+    """Is the ghost portrait present, and is it the same face as the portrait?
+
+    Two failure modes, one signal, because they are the same forgery seen from
+    two sides: the ghost is gone, or the ghost no longer matches.
+    """
+    started = time.perf_counter()
+    sid = "tamper.physical.ghost_missing"
+
+    if not ctx.field_boxes:
+        return _signal(sid, "inconclusive",
+                       "The ghost portrait could not be checked - the field "
+                       "detector is not yet deployed, so neither portrait was "
+                       "located", confidence=0.0, started=started)
+
+    photo_box = ctx.field_boxes.get("person_photo")
+    ghost_box = ctx.field_boxes.get("ghost_photo")
+
+    if photo_box is None:
+        return _signal(sid, "inconclusive",
+                       "The main portrait was not located, so the ghost portrait "
+                       "has nothing to be compared against", confidence=0.0,
+                       started=started)
+
+    if ghost_box is None:
+        # The profile declares this document carries one and the detector,
+        # which found the main portrait on the same page, did not find it.
+        return _signal(sid, "fail",
+                       "This document type carries a second, faded portrait and "
+                       "none was found on it. Check the area beside the printed "
+                       "photograph", confidence=0.6, anchor="field:ghost_photo",
+                       region=tuple(photo_box), started=started)
+
+    agreement = ghost_agreement(ctx.image, photo_box, ghost_box)
+    if agreement < 0:
+        return _signal(sid, "inconclusive",
+                       "The ghost portrait was located but is too small or too "
+                       "faint at this capture resolution to compare against the "
+                       "printed photograph", confidence=0.0,
+                       anchor="field:ghost_photo", region=tuple(ghost_box),
+                       started=started)
+
+    if agreement < cfg["ghost_agreement_min"]:
+        return _signal(sid, "fail",
+                       f"The faded portrait and the printed photograph are not "
+                       f"the same face. Compare them side by side - one of the "
+                       f"two has been replaced",
+                       confidence=min(0.9, 0.4 + (cfg["ghost_agreement_min"]
+                                                  - agreement)),
+                       anchor="field:ghost_photo", region=tuple(ghost_box),
+                       started=started)
+    return _signal(sid, "pass",
+                   "The faded portrait matches the printed photograph",
+                   confidence=0.7, anchor="field:ghost_photo",
+                   region=tuple(ghost_box), started=started)
+
+
 # ------------------------------------------------------------- layout geometry
 
 def layout_reference(doc_type: str) -> dict | None:

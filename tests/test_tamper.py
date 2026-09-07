@@ -375,3 +375,88 @@ def test_tier_two_tampering_stays_inside_its_600ms_budget():
     tamper.run(ctx, tier=2)
     per_call_ms = (time.perf_counter() - started) * 1000
     assert per_call_ms < 600, f"tier 2 tampering took {per_call_ms:.0f} ms"
+
+
+# --------------------------------------------------------------- ghost portrait
+
+HAVE_GENERATOR = True
+try:
+    from data.generator import build as build_document
+except Exception:                                                # noqa: BLE001
+    HAVE_GENERATOR = False
+
+needs_generator = pytest.mark.skipif(
+    not HAVE_GENERATOR,
+    reason="build-time deps absent: pip install -r requirements-build.txt "
+           "&& python scripts/fetch_fonts.py")
+
+
+def boxes_of(doc):
+    return {name: tuple(box) for name, *box in doc.labels}
+
+
+@needs_generator
+def test_a_genuine_ghost_portrait_matches_the_printed_photograph():
+    """The ghost is the same photograph printed a second time, faded."""
+    for doc_type in ("passport", "aadhaar"):
+        doc = build_document(doc_type, seed=4)
+        boxes = boxes_of(doc)
+        agreement = physical.ghost_agreement(
+            doc.image, boxes["person_photo"], boxes["ghost_photo"])
+        assert agreement >= CFG["ghost_agreement_min"], (
+            f"{doc_type} genuine ghost scored {agreement:.3f}")
+
+
+@needs_generator
+def test_swapping_the_portrait_and_leaving_the_ghost_is_caught():
+    """The forgery this check exists for: a forger replaces the photograph and
+    forgets the faded copy, leaving two different people on one page."""
+    caught = 0
+    for doc_type in ("passport", "aadhaar"):
+        for seed in range(4):
+            doc = build_document(doc_type, seed=seed)
+            boxes = boxes_of(doc)
+            forged, _mask = mutate.photo_swap(doc.image, seed=seed)
+            agreement = physical.ghost_agreement(
+                forged, boxes["person_photo"], boxes["ghost_photo"])
+            if agreement < CFG["ghost_agreement_min"]:
+                caught += 1
+    assert caught == 8, f"only {caught}/8 portrait swaps were caught"
+
+
+@needs_generator
+def test_the_ghost_check_reports_a_verdict_through_the_module():
+    doc = build_document("passport", seed=6)
+    ctx = ctx_for("passport", image=doc.image, field_boxes=boxes_of(doc))
+    signal = by_id(tamper.run(ctx))["tamper.physical.ghost_missing"]
+    assert signal.verdict == "pass"
+    assert signal.region is not None
+
+
+def test_a_missing_ghost_is_a_failure_not_a_gap():
+    """The detector found the main portrait on the same page and no ghost. On a
+    document type that carries one, that is the finding, not an absence of one."""
+    ctx = ctx_for("passport", field_boxes={"person_photo": (60, 80, 190, 240)})
+    signal = by_id(tamper.run(ctx))["tamper.physical.ghost_missing"]
+    assert signal.verdict == "fail"
+    assert "none was found" in signal.evidence
+
+
+def test_the_ghost_check_is_inconclusive_without_a_detector():
+    """No field boxes means neither portrait was located. Saying so costs
+    coverage, which is correct - it must not read as a clean document (D9)."""
+    signal = by_id(tamper.run(ctx_for("passport")))["tamper.physical.ghost_missing"]
+    assert signal.verdict == "inconclusive"
+    assert "detector" in signal.evidence
+
+
+def test_guilloche_is_blocked_by_measurement_not_by_a_missing_template():
+    """D25's sibling. The template exists now - the generator draws real
+    guilloche - so the old reason expired. It stays blocked because three
+    formulations were measured and none separated a break from genuine
+    variation, and that reason has to be the one the officer reads."""
+    signal = by_id(tamper.run(ctx_for("passport")))["tamper.physical.guilloche_break"]
+    assert signal.verdict == "inconclusive"
+    assert "measured" in signal.evidence
+    assert "template" not in signal.evidence.lower()
+    assert "drawing" not in signal.evidence.lower()

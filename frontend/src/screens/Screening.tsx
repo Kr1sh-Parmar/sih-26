@@ -10,8 +10,12 @@
  * 450 ms is what makes a fast system feel slow.
  */
 import { useEffect, useRef, useState } from "react";
+import type { ScreeningEvent } from "../contracts";
 import { useScreening } from "../store/screening";
 import { fixture, replayFixture, type FixtureName } from "../transport/mockSocket";
+import { connect, fetchDoc, startReplay } from "../transport/socket";
+import { useMode } from "../transport/mode";
+import { ModeBadge } from "../components/ModeBadge";
 import { VerdictBand } from "../components/VerdictBand";
 import { EvidenceList } from "../components/EvidenceList";
 import { DisclosureNotice } from "../components/DisclosureNotice";
@@ -32,25 +36,67 @@ export function Screening() {
   const [scene, setScene] = useState<FixtureName>("green");
   const [elapsed, setElapsed] = useState<number | null>(null);
   const startedAt = useRef<number>(0);
+  const mode = useMode();
 
   const s = useScreening();
 
   useEffect(() => {
+    if (mode === "probing") return;
+
     s.reset();
-    const doc = fixture(scene);
-    s.setDoc(doc);
     startedAt.current = performance.now();
     setElapsed(null);
 
-    const run = replayFixture(scene, (e) => {
+    const onEvent = (e: ScreeningEvent) => {
       s.apply(e);
       if (e.type === "phase" && e.phase === "done") {
         setElapsed(Math.round(performance.now() - startedAt.current));
       }
-    });
-    return () => run.cancel();
+    };
+
+    // Fixtures: the same scene, replayed locally. Nothing to await, so the
+    // stream starts on this tick.
+    if (mode === "fixtures") {
+      s.setDoc(fixture(scene));
+      const run = replayFixture(scene, onEvent);
+      return () => run.cancel();
+    }
+
+    // Live: the same fixture signals, but scored by the production fusion
+    // engine server-side. Two awaits where there was one synchronous call, so
+    // the socket may open after this effect has already been torn down.
+    let cancel: (() => void) | null = null;
+    let dead = false;
+
+    (async () => {
+      try {
+        const started = await startReplay(scene);
+        const doc = await fetchDoc(started.id);
+        if (dead) return;
+        s.setDoc(doc);
+        cancel = connect(started.id, onEvent).cancel;
+      } catch (error) {
+        if (dead) return;
+        // Falling back silently would be the dangerous outcome: the officer
+        // would see a verdict and have no way to know it came from a local
+        // fixture instead of the service.
+        s.apply({
+          type: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "The screening service could not be reached.",
+          recoverable: true,
+        });
+      }
+    })();
+
+    return () => {
+      dead = true;
+      cancel?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scene]);
+  }, [scene, mode]);
 
   const doc = s.doc;
   const canvas = (doc?.meta.canvas as [number, number]) ?? [1654, 1170];
@@ -59,7 +105,10 @@ export function Screening() {
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[minmax(0,2fr)_minmax(26rem,1fr)]">
       {/* ---------------------------------------------- physical evidence */}
       <div className="min-w-0">
-        <StreamStatus phase={s.phase} signals={s.signals} elapsedMs={elapsed} />
+        <div className="flex items-center justify-between gap-4">
+          <StreamStatus phase={s.phase} signals={s.signals} elapsedMs={elapsed} />
+          <ModeBadge mode={mode} />
+        </div>
 
         <div className="mt-4">
           {doc && (
@@ -95,7 +144,11 @@ export function Screening() {
         {/* Scene picker. Replaced by the capture screen once a scanner is
             wired in; kept because DEMO.md wants a rehearsed running order. */}
         <div className="mt-10 border-t border-iris pt-4">
-          <p className="text-label text-iris-ink">Replay a rehearsed case</p>
+          <p className="text-label text-iris-ink">
+            {mode === "live"
+              ? "Replay a rehearsed case through the live fusion engine"
+              : "Replay a rehearsed case"}
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {SCENES.map((sc) => (
               <button

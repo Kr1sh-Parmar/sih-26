@@ -392,3 +392,184 @@ A renderer knows where it drew each field, so the YOLO label is a by-product of 
 The identity is also **self-consistent by construction** — one person, one date of birth, one face across every document they hold. Making two documents disagree is then a single deliberate edit, which is exactly the shape Layer D needs to demonstrate.
 
 That last part was not free. The portrait was first picked from the *render* seed rather than the identity, so one person's Aadhaar and PAN carried two different faces. Invisible on a single card and fatal in a session: Scene 3 puts the two side by side, so an officer would have been shown two different people, and the face module would have flagged a generator artefact as a mismatch. The portrait belongs to the identity now, and a test asserts it.
+
+---
+
+## D33 — The raw capture expires; the audit trail does not
+
+**Rejected:** one retention rule for everything a screening produces.
+
+**Why:** they are two different things with opposite requirements. The **document image** is the traveller's identity document, and `TECHNICAL-SPEC.md` §9 says it must not outlive the session — it is the only unredacted personal data the system ever holds. The **signal list** is the audit trail, and CONTEXT.md §3 says decisions get challenged months later, so it has to survive long enough to be re-scored.
+
+So `api/main.py` evicts `PENDING` (raw bytes, decoded context, live frame) and `SESSIONS` (Layer D priors) on a TTL from `config/thresholds.yaml`, and evicts nothing from `screening_events` or `face_gallery`. A 512-float embedding cannot be turned back into a face; a JPEG can be turned back into a person.
+
+**What this fixed:** the comment above those two dicts already claimed this behaviour. Nothing implemented it. Every upload's bytes stayed resident for the life of the process and `GET /screen/{id}/image` served them back indefinitely — an unbounded memory leak and a stated-policy violation in the same four lines.
+
+**Session priors expire too, and that is the sharper half.** A signed Aadhaar from an hour ago still sitting in `SESSIONS` would become ground truth for whoever is standing at the counter now. Layer D would then cross-check a stranger's PAN against a payload that proves nothing about them.
+
+**ponytail:** eviction is opportunistic, on the next request that touches the map, not a background task. A single-counter process does not need a scheduler, and a scheduler is one more thing that can be wedged at 3am. The ceiling is that nothing expires while the process is idle, which is acceptable when the thing being bounded is memory.
+
+---
+
+## D34 — Re-scoring reconstructs the signed field set from the record
+
+**Rejected:** persisting the verified payload so a re-score can reproduce cryptographic precedence exactly.
+
+**Why:** the payload is the traveller's name, date of birth and gender. Storing it to make an audit feature more faithful would put exactly the personal data CLAUDE.md rule 5 and `TECHNICAL-SPEC.md` §9 exist to keep out of the database — and it would sit there for the life of the audit trail, which is the longest-lived thing in the system.
+
+`fusion.score.apply_crypto_precedence` needs `signed_fields` to know which probabilistic disputes a signature already settled. On re-score that set is rebuilt from the stored signals instead: every `field:` anchor carrying a `cryptographic` trust class. It is an approximation and is documented as one — a signed field that nothing disputed is absent from it, and its absence changes nothing, because there is no probabilistic finding at that anchor to suppress.
+
+**The other half of the same decision:** `api/router.rescore()` restates `score()`'s ordering — hard fail, coverage floor, cryptographic precedence, bands — because the coverage floor is itself band-dependent and cannot be re-banded after the fact. Every piece of arithmetic is imported rather than copied; only the order is written twice, and `tests/test_rescore.py` pins the two together by asserting they agree exactly when handed the configured bands. The real fix is a `bands=` parameter on `score()`, which is a change to frozen-contract-adjacent code and was left alone deliberately.
+
+
+---
+
+## D35 — The ratifier discards a failed read rather than storing it
+
+**Rejected:** storing every VLM read and letting the score account for the ones that fail their checksum.
+
+**Why:** a value known to be wrong is not inert. Layer C compares the printed value against the MRZ and Layer D compares it against a signed sibling document, so a misread identity number does not sit quietly with a low weight — it *manufactures* a mismatch, in the two checks this system is actually sold on. The cheapest way to keep a bad read out of those comparisons is never to put it in `ctx.fields`.
+
+The three-way outcome TECHNICAL-SPEC §4 describes maps onto the frozen `TrustClass` like this: checksum verifies → stored, `arithmetic`; checksum fails → **not stored**, `extraction.vlm.ratified` fails; no checksum exists → stored, `unverified`, and it costs coverage.
+
+**`force MANUAL_REVIEW` needed no new mechanism.** Unratified fields emit `inconclusive`, coverage drops below the 0.70 floor, and the verdict is AMBER "re-capture required" (D9). Measured end to end on a generated passport: coverage 0.28, AMBER.
+
+**Two signals, not two per field.** `extraction.vlm.ratified` and `extraction.vlm.unratified` are registered as concrete ids with one weight each, and one screening may not emit an id twice. "Some of this output could not be checked" is one condition however many fields it covers; charging coverage per field would count one problem several times (D8).
+
+---
+
+## D36 — The fallback fires when nothing was located, not only on a weak read
+
+**Rejected:** the documented trigger alone — a field OCR located and read below its confidence floor.
+
+**Why:** `extraction.run()` only calls OCR when `ctx.field_boxes` is non-empty, and with no detector weights it is always empty, so the documented trigger can never fire on the system as it stands. `<OCR_WITH_REGION>` reads a whole page and grounds each string in a box; it needs no field to aim at. That makes it the only reader that works before the detector comes back from the GPU.
+
+**What it costs:** the fallback now runs on every document, so every screening pays 6 to 8 seconds. That is the honest price of reading anything at all right now, and it disappears the moment the detector lands.
+
+**What it is worth, measured:** correct dates and nothing provable. Florence-2 transcribes dates exactly and drops or inserts characters in names and identity numbers — `CHABRA` for `CHHABRA`, `M37011978` for `M3701978`. It does not return the MRZ as a parseable strip. So the ratifier has not yet confirmed a single real read, and the fallback improves coverage and evidence without letting a document clear. `data/EXTRACTION.md` carries the numbers.
+
+**And the spec is optimistic.** §4 says 1.5 s and §10 budgets +1,500 ms; the measurement is 5.8 to 7.3 s per document against an 8 s hard timeout. The timeout was written as a safety net against a hang and is now a live constraint.
+
+---
+
+## D37 — An unverified read may not contradict a proven value
+
+**Rejected:** letting Layers C and D compare whatever sits in `ctx.fields`, regardless of how it got there.
+
+**Why:** it was reachable, and the consequence was the worst verdict this system can produce. Florence-2 transcribes a date perfectly and then returns `CHABRA` for `CHHABRA` (`data/EXTRACTION.md`). The ratifier correctly stores such a field as `unverified` — no checksum exists for a name, so nothing can confirm it. Layer D then compared that string against a cryptographically proven payload, found it different, and emitted `validation.crossdoc.name_mismatch`: **a hard fail on four profiles, carrying trust class `cryptographic`** because the *other* side of the comparison is signed.
+
+A genuine traveller detained on a transcription error, with the console reporting the strongest certainty the architecture has. Verified empirically before the fix: a one-character misread on a generated PAN, against a signed Aadhaar prior, produced `fail / hard_fail=True / cryptographic`.
+
+That is exactly the laundering of a probabilistic read into a cryptographic verdict that D3 exists to prevent. The trust class was never wrong about the *signature* — it was wrong about the comparison, which is only as strong as its weaker side.
+
+**The fix:** `modules/validation/__init__.py` defines `COMPARABLE_SOURCES = {"ocr", "mrz", "qr"}` and `comparable()`. Each of the three earned its place — `qr` is a signed payload, `mrz` carries its own check digits, `ocr` is gated on a confidence floor. `vlm` has none of the three. When the only reading of a field came from the fallback, Layers C and D report `inconclusive` naming that reason, which costs coverage — correct, because agreement genuinely was not established (D9) — and never produces a false hard fail.
+
+**What it does not do:** go blind. An OCR-sourced disagreement still fires and still hard-fails; Layer D trust propagation is the headline demo and is on the never-cut list. Four tests in `tests/test_validation.py` pin both halves.
+
+**The general lesson, worth more than the fix:** a comparison inherits the trust class of its *weakest* input, not its strongest. Anywhere else two values of different provenance are compared, the same question applies.
+
+
+---
+
+## D38 — Guilloche continuity was measured against a real one, and stayed off
+
+**Rejected:** enabling `tamper.physical.guilloche_break` once the generator gave us line-work to check.
+
+**Why:** the old block said guilloche needed a reference drawing we had not built. `data/generator/` draws one now — a tiled hypotrochoid, the curve a rose engine actually traces — so that reason expired and the check was re-examined properly. Three formulations were measured:
+
+- **low-energy islands**, on the theory that a pasted patch erases the pattern: no separation at all. A retyped box comes out *higher* energy than its surroundings, because the redrawn text adds more edge than the erased background carried;
+- **inside-versus-outside texture ratio**: separates, but content-driven and inconsistent in direction — 3.10 on retype and 0.14 on photo swap, on the same statistic. It measures "is this region texturally unusual", which is what `ela` and `noise_residual` already report. A third reading of one artefact is the correlated double count D8 exists to prevent;
+- **phase continuity at the tile period**: clean documents score 0.039–0.083. There is no phase to break — the generator varies the figure tile to tile, so adjacent tiles are already uncorrelated.
+
+So it stays `inconclusive`, but **the sentence the officer reads has been corrected**. "We have no template" is no longer true and would have quietly become a lie the moment the generator landed. It now says the check was measured and does not separate a break from ordinary variation.
+
+**The caveat, which cuts the other way:** the third result is partly a fact about *our* guilloche rather than about guilloche. A real passport's background may be more regular, in which case phase continuity becomes measurable. `hypotrochoid()` and the probe stay in the tree for that reason, and this is worth re-testing against a specimen scan.
+
+**`photo_boundary` was declined at the same time.** TECHNICAL-SPEC §7 and MODULES.md both name it; it has no registered ID and no reliability weight, so it would silently take `_default: 0.50`. The edge artefact it looks for is the same pixel evidence copy-move already verifies by correlation. Named in `data/TAMPERING.md` rather than built.
+
+---
+
+## D39 — The ghost portrait check is a comparison, which is why it works
+
+**Rejected:** treating the ghost portrait as another texture statistic alongside halftone and guilloche.
+
+**Why:** every other check in the physical track asks "does this region look like the rest of the page", and all of them are fragile for the same reason — they measure content as much as source. The ghost is different in kind. It is *the same photograph printed twice*, so the check is whether two regions show the same face, and that question does not care how the document was printed, scanned or lit.
+
+Measured on 24 generated passports and Aadhaar cards: genuine pairs correlate at median 0.991, minimum 0.952; a swapped portrait with the ghost left alone drops to median 0.732, maximum 0.884. At a cut of 0.90 — six percent below the lowest genuine score, chosen from the clean distribution alone (D26) — no genuine document is flagged and every swap is caught.
+
+Both portraits are equalised before comparison. The ghost is printed lighter and softer by design, so comparing raw intensity would report every genuine document as a mismatch.
+
+**The number is optimistic and is labelled as such.** Our generator makes the ghost a literal downscale of the same pixel array, so it correlates near-perfectly. A real ghost is separately halftone-printed at a different size; genuine agreement will be materially lower, and the threshold needs re-fitting on real captures before anyone quotes 100%.
+
+**A missing ghost is a failure, not a gap.** If the detector found the main portrait on the same page and no ghost on a document type that carries one, the absence *is* the finding — not an absence of one.
+
+---
+
+## D40 — Passive liveness deployed, and the input contract is recorded rather than remembered
+
+**Supersedes the "not deployed" half of D30.** The blockers were a licence read and a format conversion; both are done. Silent-Face-Anti-Spoofing is **Apache-2.0**, which permits redistribution with attribution, so `scripts/convert_liveness.py` fetches the `.pth`, loads it through upstream's own architecture file, and exports ONNX under `.venv-train` — torch goes in, ONNX comes out, and only the ONNX crosses back into the screening image.
+
+**Rejected:** trusting the input contract that was written before the weights existed.
+
+**Why:** it was a guess, and it was wrong twice. The module normalised to `[0, 1]` and swapped to RGB; the model wants **raw 0-255 BGR**, because upstream's `ToTensor` is not torchvision's — it transposes and calls `.float()`, with no scaling and no channel swap.
+
+Neither mistake raises. The network returns three plausible probabilities for an image it was never trained on. With the division in place, **every genuine face scored 0.006 live and the check rejected 100% of real people** — a liveness check that fails every traveller and looks like it is working. Without it, 0.968 against 0.001 for a simulated spoof.
+
+The export verified torch against onnxruntime on a **black frame**, which could not have caught it: zeros are invariant under scaling. The reference is a deterministic ramp now, and `colour_order` and `input_range` are in the sidecar so the assumption is checkable instead of remembered.
+
+**What is still owed:** an actual printed photo and an actual phone screen on the demo camera. The simulated attacks establish direction and separation, not a rejection rate, and `data/FACE.md` says so in those words.
+
+---
+
+## D41 — Demographic disparity is recorded as unmeasured, not as absent
+
+**Rejected:** shipping a face module with no statement about demographic performance, or with a reassuring one.
+
+**Why:** NIST FRVT found demographic false-match differentials above an order of magnitude across algorithms. A system that has not measured its own is not a system without a disparity, and MODULES.md calls this a compliance item rather than a nice-to-have.
+
+`scripts/eval_bias.py` is written and runs the moment either dataset is on disk. Neither can be fetched unattended here: FairFace ships its images through Google Drive, RFW requires signing a licence.
+
+One thing worth knowing before anyone runs it, because it changes what the result can mean: **FairFace has one image per person.** With no identity labels there are no genuine pairs, so it yields a false *match* rate by group and cannot produce false rejection at all. RFW carries identities and gives both halves. The harness does whichever the data supports and prints which one it did.
+
+So the honest line for a panel is "unmeasured, here is the harness and here is what each dataset can tell you" — not a number, and not silence.
+
+
+---
+
+## D42 — The machine-readable zone is read from where ICAO says it is, not from a detector box
+
+**Rejected:** waiting for the field detector before reading any field on any document.
+
+**Why:** the detector is the long pole — it trains on a GPU elsewhere, and until it lands `ctx.field_boxes` is empty, `ocr.run` never executes, and *nothing* is read off any document. But the MRZ does not need a learned detector to be found. ICAO 9303 fixes it at the foot of the data page, which makes it the only field on any of these six types whose position is given by an international standard rather than by a national design.
+
+Reading it from that fixed band switches on all five ICAO check digits in Layer A and the whole VIZ↔MRZ cross-check in Layer C — both already written, tested, and previously unreachable. It costs about two seconds and is both cheaper and more accurate than asking Florence-2 for the same strip, which does not return it as a parseable 44-character line at all.
+
+**The bug this uncovered.** The band catches the microtext strip beneath the MRZ, so the read arrived as four lines of 44/44/22/18. The geometry gate saw four lines, rejected the lot, and *a perfectly read MRZ was discarded because the crop was not tight*. `select_mrz_lines()` now picks the contiguous run matching a supported geometry. This does not weaken the gate — the selected lines must still be exactly the right width, still pass the charset check, and still satisfy the check digits. It also un-broke `apply_positional_charset`, which returns untouched unless given exactly two lines and had therefore been silently doing nothing whenever a stray row was present.
+
+---
+
+## D43 — On an untargeted read, the check digits test the reading, not the document
+
+**Rejected:** handing every well-formed MRZ strip from the fixed-position read straight to Layer A.
+
+**Why:** measured over 30 generated passports, that path is **70% character-exact**. The remaining 30% produce a well-formed 44-character strip with a wrong character in it, which fails a check digit — and a failed composite check digit is a hard fail. Roughly a fifth of *genuine* passports would have been detained on an OCR error, and the officer would have been told so with arithmetic certainty.
+
+A confidence gate cannot save it. PP-OCR's confidence does not separate the cases: the misreads scored **higher** on average (0.791 median) than the exact reads (0.751 median, minimum 0.576). Upscaling the band moved accuracy 67% → 72%, which is not a fix either.
+
+So on this path the ICAO check digits are used as a **self-test of the read** before the strip is stored. A strip whose own check digits disagree with its characters is reported as unreadable — *"could not be read reliably … re-capture at a higher resolution"* — because with a reader this accurate, a failure is far more likely a misread than a forgery. Measured after the change: **15 of 15 genuine passports AMBER, none RED.**
+
+**The cost, stated plainly: this path can confirm a good machine-readable zone and can never report a tampered one.** That is a real loss of capability. It is smaller than the alternative, because before this nothing was read at all, and it is temporary: `_read_mrz_field`, the detector-fed path, deliberately keeps the geometry gate alone, so when a tight crop puts the reader in a different accuracy regime, forgery detection survives there.
+
+---
+
+## D44 — `ocr_lang` became live config; the Devanagari reader did not arrive
+
+**Rejected:** leaving `extract.ocr_lang` as a declaration nothing reads.
+
+**Why:** `aadhaar`, `voter_id` and `dl` all declare `ocr_lang: [en, hi]`, and no Python read the key. Measured, the bundled `ch_PP-OCRv4_rec_infer.onnx` returns an **empty string at confidence 0.00** on rendered Devanagari — not garbage, nothing. Empty is the safe failure, because it becomes `inconclusive` rather than a wrong value, but the officer was told only "could not be read", and would re-capture a document that reads the same way every time.
+
+The key is now read, the recogniser is selected per profile, and the Devanagari pass is a **fallback rather than a switch**: every value on all six types is printed in Latin as well as Devanagari — the Hindi is a second rendering of the same field, not a field of its own — so Latin runs first, succeeds almost always, and costs nothing.
+
+**The model is not deployed.** PaddleOCR publishes Devanagari as a Paddle inference model; every `paddle2onnx` on PyPI imports `paddle`, and the PaddlePaddle download timed out here. `scripts/fetch_ocr_models.py` does the fetch and conversion when the toolchain exists and otherwise says exactly what is missing. Until then the evidence string names the cause.
+
+**Deliberately not built:** a Hindi-versus-Latin cross-script consistency check. It would be a real tamper signal and it needs transliteration; an approximate comparison feeding a mismatch signal is precisely the failure just fixed in Layers C and D.

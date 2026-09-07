@@ -16,7 +16,8 @@ from fusion.context import ScreeningContext
 from fusion.signal import Signal
 from modules.extraction import mrz as MRZ
 from modules.extraction import normalize as N
-from modules.validation import anchor_for, box_of, emit, raw_of, value_of
+from modules.validation import (anchor_for, box_of, comparable, emit,
+                                raw_of, value_of)
 
 #: Standard Indian validity periods, in years. Used as a soft check: a passport
 #: whose expiry is not issue+10 or issue+5 is unusual, not impossible.
@@ -186,6 +187,16 @@ def viz_mrz(ctx: ScreeningContext) -> list[Signal]:
             out.append(emit(profile, sid, "inconclusive",
                             f"The printed {shown} could not be read, so it cannot "
                             f"be compared with the machine-readable zone",
+                            confidence=0.0, anchor=anchor_for(field), region=box,
+                            started=started))
+            continue
+
+        if not comparable(ctx, field):
+            out.append(emit(profile, sid, "inconclusive",
+                            f"The printed {shown} was only recovered by the "
+                            f"fallback reader, which cannot be relied on to the "
+                            f"character, so it is not used to dispute the "
+                            f"machine-readable zone",
                             confidence=0.0, anchor=anchor_for(field), region=box,
                             started=started))
             continue

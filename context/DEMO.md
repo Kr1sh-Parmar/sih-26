@@ -131,3 +131,63 @@ Unplug the network cable. Run Scene 1 again.
 | Scanner not available at the venue | Phone camera fallback tested; capture flow works either way |
 | Judge asks for a document type you cut deep coverage on | Know your tiering table; answer with the trade-off, not an apology |
 | Latency spike from a cold session | Warm all models at startup; do one throwaway inference before the demo starts |
+
+---
+
+# Rehearsal record — 2026-09-07
+
+Driven through the real FastAPI app: real websocket, real lifespan, real fusion
+engine, real generated documents. Not a mock of anything. What follows is what
+actually happened, including the parts that did not work — DEMO.md's own Scene 5
+argues that knowing your limits buys more credibility than any number, and that
+applies to this page too.
+
+**The one fact that shapes every line below:** `field_detector_22cls` is not
+deployed. Training moved to an external GPU (`MODEL-TRAINING.md`). Without it
+nothing reads a printed field, so coverage cannot clear the 0.70 floor and
+**every verdict is AMBER "re-capture required"**. That is the safety property
+working exactly as designed (D9) — but it means three of the five scenes cannot
+be run as scripted today.
+
+```
+health: loaded  = face_detector, face_embedding, face_liveness, ocr
+        missing = field_detector_22cls
+```
+
+| Scene | Runs today? | What actually happened |
+|---|---|---|
+| 1 — clean pass | **No** | AMBER, coverage 0.44. The signature verifies and two cryptographic passes render, but nothing printed can be read, so it cannot reach GREEN. |
+| 2 — the tamper | **No** | `validation.vizmrz.dob_mismatch` is `inconclusive`. The highest-value tamper signal compares the *printed* date against the MRZ, and there is no printed date without the detector. No tier-1 tamper check caught the splice either; the gate did not escalate, so the tier-2 forensics never ran (D6). |
+| 3 — trust propagation | **Half** | The signed Aadhaar verifies `AUTHENTIC`, the disclosure string renders, and Layer D reaches the cross-document check — then reports `inconclusive` on all three fields because the PAN's printed values could not be read. `GET /sessions` returns 2 documents and **0 propagation edges**, correctly: there is nothing proven to draw. |
+| 4 — face and liveness | Not rehearsed | Needs a live camera and a person. The models load. |
+| 5 — the honest failure | **Yes, fully** | AMBER, coverage 0.19, 16 named coverage gaps, each saying which field could not be read and why. This scene works end to end today. |
+
+## What does work end to end
+
+- **The cryptographic half.** A generated Aadhaar's QR decodes, its Ed25519
+  signature verifies against the reference issuer in the trust anchor store, and
+  the `disclosure` string renders so the verification cannot be mistaken for a
+  government one (D1).
+- **The coverage floor.** Every scene above is AMBER because of it. A system that
+  cannot read a document says so instead of clearing it.
+- **The audit trail.** `GET /events` returns 13 recorded screenings with their
+  full signal lists. The response body carries no raw identity number —
+  checked, not assumed. `POST /rescore` re-scores a stored event under different
+  bands without re-running a model.
+- **The console.** `npm run verify` passes all four gates: `tsc -b`, 31 vitest
+  tests, the production build, and `check-offline.sh` — nothing in `dist/`
+  fetches an external resource.
+
+## What to say if asked on the day
+
+> "The deterministic and cryptographic path is complete and you can see it
+> working. The reading path is waiting on one model that trains on a GPU we
+> don't have in the room. Until it lands the system refuses to clear anything,
+> which is the behaviour we want from it — an unreadable document is not a
+> cleared document."
+
+## What has to happen before this page can be rewritten
+
+1. Field detector weights into `models/` (`MODEL-TRAINING.md`). Unblocks Scenes 1, 2 and the payoff of 3.
+2. Print and rescan the generated documents. Everything above is a clean render; `context/DATA.md` is right that a model trained on clean renders falls apart on a scanner.
+3. Doc-vs-live calibration pairs, for Scene 4.

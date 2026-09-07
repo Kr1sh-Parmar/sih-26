@@ -23,7 +23,8 @@ from core.profiles import field_label, label
 from fusion.context import ScreeningContext
 from fusion.signal import Signal
 from modules.extraction import normalize as N
-from modules.validation import anchor_for, box_of, emit, value_of
+from modules.validation import (anchor_for, box_of, comparable, emit,
+                                source_of, value_of)
 
 #: How to compare each propagated field. Same normalisers as the VIZ/MRZ check,
 #: so the two layers cannot disagree about what "equal" means.
@@ -78,6 +79,20 @@ def run(ctx: ScreeningContext) -> list[Signal]:
                     ctx.profile, sid, "inconclusive",
                     f"The printed {shown} could not be read, so it cannot be "
                     f"checked against the signed {source} in this session",
+                    trust="cryptographic", confidence=0.0,
+                    anchor=anchor_for(field), region=box, started=started,
+                ))
+                continue
+
+            if not comparable(ctx, field):
+                # Read by the VLM fallback, which has no checksum behind it. It
+                # may fill a gap; it may not contradict a signed payload.
+                out.append(emit(
+                    ctx.profile, sid, "inconclusive",
+                    f"The {shown} on this document was only recovered by the "
+                    f"fallback reader, which cannot be relied on to the "
+                    f"character, so it is not used to dispute the signed "
+                    f"{source}",
                     trust="cryptographic", confidence=0.0,
                     anchor=anchor_for(field), region=box, started=started,
                 ))

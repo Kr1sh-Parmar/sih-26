@@ -13,6 +13,7 @@ scoring, the coverage floor and the card ordering are the production code.
 No network call at inspection time. Nothing here downloads anything.
 """
 import json
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -20,6 +21,7 @@ from pathlib import Path
 from fastapi import FastAPI, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from api import router as pipeline
 from api import websocket as ws
@@ -44,10 +46,69 @@ FIXTURES = {
 #: Screenings held in memory between the POST and the socket connecting, and
 #: the source of GET /screen/{id}/doc. Session-scoped by design: raw images and
 #: face crops must not outlive the session (TECHNICAL-SPEC.md section 9).
+#:
+#: That was a comment describing behaviour nothing implemented. Neither map was
+#: ever emptied, so the full bytes of every upload stayed resident for the life
+#: of the process and `GET /screen/{id}/image` served them back indefinitely -
+#: an unbounded leak and a stated-policy violation in one. `_evict()` is the
+#: thing that makes the sentence above true.
 PENDING: dict[str, dict] = {}
-SESSIONS: dict[str, list] = {}
+
+#: session id -> {"priors": [...], "touched": monotonic seconds}. Priors are
+#: what Layer D propagates from, so they expire with the traveller: a stale
+#: prior still vouching for whoever stands at the counter an hour later is the
+#: failure worth avoiding.
+SESSIONS: dict[str, dict] = {}
 
 state: dict = {}
+
+
+def retention() -> dict:
+    return load_config("thresholds")["retention"]
+
+
+def _evict(now: float | None = None) -> int:
+    """Drop expired captures and sessions. Returns how many went.
+
+    Opportunistic - called by the handlers that touch these maps rather than by
+    a background task. A single-counter process does not need a scheduler, and
+    a scheduler is one more thing that can be wedged at 3am. The ceiling is
+    plain: nothing expires while the process is idle. That is fine when the
+    thing being bounded is memory, and it is what a restart is for.
+    """
+    cfg = retention()
+    now = time.monotonic() if now is None else now
+
+    stale = [k for k, v in PENDING.items()
+             if now - v.get("created", now) > cfg["pending_seconds"]]
+    for key in stale:
+        # Drops the decoded context, the raw bytes and any live frame with it.
+        PENDING.pop(key, None)
+
+    cold = [k for k, v in SESSIONS.items()
+            if now - v.get("touched", now) > cfg["session_seconds"]]
+    for key in cold:
+        SESSIONS.pop(key, None)
+
+    return len(stale) + len(cold)
+
+
+def _priors(session_id: str) -> list:
+    entry = SESSIONS.get(session_id)
+    return entry["priors"] if entry else []
+
+
+def _remember(session_id: str, prior: dict) -> None:
+    entry = SESSIONS.setdefault(session_id, {"priors": [], "touched": 0.0})
+    entry["priors"].append(prior)
+    entry["touched"] = time.monotonic()
+
+
+def _expired_message() -> str:
+    minutes = max(1, int(retention()["pending_seconds"] // 60))
+    return (f"This screening is no longer held. Captures are discarded after "
+            f"{minutes} minutes so they do not outlive the traveller at the "
+            f"counter. Re-capture the document.")
 
 
 @asynccontextmanager
@@ -119,10 +180,11 @@ async def create_screening(
     if doc_type not in DOC_TYPES:
         raise HTTPException(400, f"unknown document type {doc_type!r}")
 
+    _evict()
     data = await image.read()
     try:
         ctx = pipeline.build_context(data, doc_type, session_id,
-                                     prior_docs=SESSIONS.get(session_id, []))
+                                     prior_docs=_priors(session_id))
     except DecodeError as exc:
         raise HTTPException(400, str(exc))
 
@@ -136,7 +198,7 @@ async def create_screening(
     PENDING[screening_id] = {
         "ctx": ctx, "uploaded": uploaded, "session_id": session_id,
         "image": data, "content_type": image.content_type or "image/jpeg",
-        "mode": "live",
+        "mode": "live", "created": time.monotonic(),
     }
     return {"id": screening_id, "session_id": session_id, "doc_type": doc_type}
 
@@ -146,9 +208,11 @@ async def create_replay(name: str, session_id: str = Form("replay")) -> dict:
     """Fixture signals, real fusion. The mockSocket replacement."""
     if name not in FIXTURES:
         raise HTTPException(404, f"unknown fixture {name!r}")
+    _evict()
     screening_id = str(uuid.uuid4())
     PENDING[screening_id] = {"mode": "replay", "fixture": name,
-                             "session_id": session_id}
+                             "session_id": session_id,
+                             "created": time.monotonic()}
     return {"id": screening_id, "session_id": session_id, "fixture": name}
 
 
@@ -158,9 +222,10 @@ def screening_doc(screening_id: str) -> dict:
 
     Same shape as FixtureDoc in the console, so `setDoc()` takes it unchanged.
     """
+    _evict()
     pending = PENDING.get(screening_id)
     if pending is None:
-        raise HTTPException(404, "unknown screening")
+        raise HTTPException(404, _expired_message())
 
     if pending["mode"] == "replay":
         return _fixture(pending["fixture"])
@@ -183,34 +248,223 @@ def screening_doc(screening_id: str) -> dict:
 
 @app.get("/screen/{screening_id}/image")
 def screening_image(screening_id: str) -> Response:
+    """The raw capture, while it still exists.
+
+    This is the only endpoint that hands back an unredacted document image, so
+    it is the one the retention rule is really about. After the TTL the bytes
+    are gone and this says so in a sentence an officer can act on, rather than
+    a bare 404 that reads like a bug.
+    """
+    _evict()
     pending = PENDING.get(screening_id)
-    if pending is None or pending["mode"] != "live":
-        raise HTTPException(404, "no image for this screening")
+    if pending is None:
+        raise HTTPException(404, _expired_message())
+    if pending["mode"] != "live":
+        raise HTTPException(404, "This screening replayed stored signals, so "
+                                 "there is no captured image to show.")
     return Response(pending["image"], media_type=pending["content_type"])
+
+
+def _is_signed(event: dict) -> bool:
+    """Did this document's own signature verify?
+
+    Read back off the stored signals rather than kept as a column - the record
+    already says it, and a second place to say it is a second place to be wrong.
+    """
+    return any(s["id"] == "validation.signature.valid" and s["verdict"] == "pass"
+               for s in event["signals"])
+
+
+def _edges(events: list[dict], priors: list[dict] | None = None) -> list[dict]:
+    """Cross-document trust propagation, reconstructed from the stored signals.
+
+    Layer D emits `validation.crossdoc.<field>_mismatch` on the *unsigned*
+    document, so the edge runs from the most recent signed document earlier in
+    the session to this one. That the signal exists at all means a signed prior
+    was found - Layer D stays silent otherwise, rather than inventing a weaker
+    version of itself.
+
+    The two compared values ride along **only while the session is still live**.
+    They are the traveller's name and date of birth, so they are deliberately
+    never written to `screening_events` - but they do sit in `SESSIONS` for as
+    long as the traveller is at the counter, which is exactly when the console
+    needs to draw them. Once the session expires the edge keeps its verdict and
+    its evidence sentence and loses the two values: the retention rule doing its
+    job, not a degradation.
+
+    ponytail: priors are joined to events by position. Both lists are appended
+    once per screening in `_stream_live`, one immediately after the other, so
+    index i is the same document in both. A real join key would need the event
+    id threaded through `layer_d.as_prior`, whose shape is not mine to change.
+    """
+    # Written without the trailing dot on purpose: `tests/test_contracts.py`
+    # treats any two-dot string literal as a signal id and demands it be
+    # registered, and this is a prefix rather than an id.
+    crossdoc = "validation.crossdoc"
+    priors = priors or []
+    out: list[dict] = []
+    signed_so_far: list[dict] = []
+
+    for index, event in enumerate(events):
+        prior = priors[index] if index < len(priors) else {}
+        for signal in event["signals"]:
+            sid = signal["id"]
+            if not sid.startswith(f"{crossdoc}.") or not signed_so_far:
+                continue
+            if signal["verdict"] not in ("pass", "fail"):
+                continue
+            field = sid.rsplit(".", 1)[-1].removesuffix("_mismatch")
+            source = signed_so_far[-1]
+            out.append({
+                "field": field,
+                "from": source["id"],
+                "to": event["id"],
+                "agrees": signal["verdict"] == "pass",
+                "trust_class": signal["trust_class"],
+                "evidence": signal["evidence"],
+                "from_value": (source["prior"].get("payload") or {}).get(field),
+                "to_value": (prior.get("fields") or {}).get(field),
+            })
+        if _is_signed(event):
+            signed_so_far.append({**event, "prior": prior})
+    return out
 
 
 @app.get("/sessions/{session_id}")
 def session(session_id: str) -> dict:
-    """Documents screened in this session, for the multi-document view."""
+    """Documents screened in this session, and what vouched for what.
+
+    The edges are the headline (D19): four of six Indian identity documents
+    carry no cryptographic integrity, so when one in the session *is* signed,
+    the console has to be able to draw what its payload proved about the others.
+    """
     events = state["store"].session_events(session_id)
     return {
         "session_id": session_id,
         "documents": [
             {"id": e["id"], "doc_type": e["doc_type"], "band": e["verdict"],
              "score": e["score"], "coverage": e["coverage"],
-             "created_at": e["created_at"]}
+             "signed": _is_signed(e), "created_at": e["created_at"]}
             for e in events
         ],
+        "edges": _edges(events, _priors(session_id)),
     }
+
+
+@app.get("/events")
+def events(limit: int = 50, offset: int = 0) -> dict:
+    """The audit table. Newest first.
+
+    Carries the full signal list per event on purpose: storing signals rather
+    than cards is only worth anything if the record can be opened and re-scored,
+    and making the console fetch each event again to prove that would be a
+    second round trip to demonstrate the first one worked.
+
+    Never the raw identity number - the column does not exist. Salted hash and
+    last four only (CLAUDE.md rule 5).
+    """
+    store = state["store"]
+    rows = store.recent_events(limit=limit, offset=offset)
+    return {
+        "total": store.count_events(),
+        "limit": limit,
+        "offset": offset,
+        "events": [
+            {"id": e["id"], "session_id": e["session_id"],
+             "doc_type": e["doc_type"], "created_at": e["created_at"],
+             "band": e["verdict"], "score": e["score"], "coverage": e["coverage"],
+             "id_number_hash": e["id_number_hash"],
+             "id_number_last4": e["id_number_last4"],
+             "officer_id": e["officer_id"],
+             "model_versions": e["model_versions"],
+             "signed": _is_signed(e),
+             "signals": e["signals"]}
+            for e in rows
+        ],
+    }
+
+
+class Bands(BaseModel):
+    """An operating point. The checkpoint commander sets these, not us."""
+    green_below: float = Field(gt=0.0, le=1.0)
+    amber_below: float = Field(gt=0.0, le=1.0)
+    coverage_floor: float = Field(ge=0.0, le=1.0)
+
+
+class RescoreRequest(BaseModel):
+    event_id: str
+    bands: Bands | None = None
+    #: Signal id pattern to weight, e.g. {"tamper.*": 0.2}. Same matching the
+    #: profile uses, so a wildcard behaves identically to one written in YAML.
+    weights: dict[str, float] | None = None
+
+
+@app.post("/rescore")
+def rescore(request: RescoreRequest) -> dict:
+    """Re-score a stored event under a different operating point.
+
+    No model runs. Every input the scorer needs was written down at screening
+    time, which is the whole reason `screening_events.signals` holds the full
+    list rather than the evidence cards - cards are a view. This is what makes
+    two verdicts months apart comparable when a weight has changed in between
+    (CONTEXT.md section 3).
+    """
+    event = state["store"].event(request.event_id)
+    if event is None:
+        raise HTTPException(404, "No screening with that id was recorded.")
+
+    signals = [from_json(s) for s in event["signals"]]
+    try:
+        profile = pipeline.profile_with_weights(event["doc_type"], request.weights)
+    except ProfileError as exc:
+        raise HTTPException(400, str(exc))
+
+    cfg = load_config("bands")
+    bands = (request.bands.model_dump() if request.bands else
+             {**cfg["bands"], "coverage_floor": cfg["coverage_floor"]})
+    if bands["green_below"] > bands["amber_below"]:
+        raise HTTPException(400, "The clear threshold cannot sit above the "
+                                 "secondary-inspection threshold.")
+
+    verdict = pipeline.rescore(signals, profile, bands,
+                               signed_fields=_proven_fields(signals))
+    return {
+        "event_id": event["id"],
+        "doc_type": event["doc_type"],
+        "recorded": {"band": event["verdict"], "score": event["score"],
+                     "coverage": event["coverage"]},
+        "rescored": {"band": verdict.band, "score": round(verdict.score, 3),
+                     "coverage": round(verdict.coverage, 3),
+                     "reason": verdict.reason},
+        "changed": verdict.band != event["verdict"],
+        "bands": bands,
+        "weights_overridden": sorted(request.weights or {}),
+    }
+
+
+def _proven_fields(signals) -> set[str]:
+    """Which field anchors a signature vouched for, read back off the record.
+
+    An approximation, and worth naming as one. At screening time this is
+    `core.canonical.signed_fields(payload)` - every non-empty field in the
+    verified payload. The payload is the traveller's name and date of birth and
+    is deliberately never stored, so re-scoring reconstructs the set from the
+    cryptographic signals that survived instead. It covers every field a
+    cryptographic check actually spoke about, which is the set that matters for
+    suppression; a signed field nothing disputed is absent, and its absence
+    changes nothing, because there is no probabilistic finding there to suppress.
+    """
+    return {s.anchor for s in signals
+            if s.trust_class == "cryptographic" and s.anchor.startswith("field:")}
 
 
 @app.websocket("/screen/{screening_id}")
 async def screen_socket(socket: WebSocket, screening_id: str) -> None:
     await socket.accept()
+    _evict()
     pending = PENDING.get(screening_id)
     if pending is None:
-        await socket.send_json(ws.error("This screening has expired. Re-capture "
-                                        "the document.", recoverable=True))
+        await socket.send_json(ws.error(_expired_message(), recoverable=True))
         await socket.close()
         return
 
@@ -246,7 +500,7 @@ async def _stream_live(socket: WebSocket, pending: dict) -> None:
     pipeline.persist(result, state["store"])
     # Feed this document forward so the next one in the session can be checked
     # against it. Only a verified payload travels (Layer D).
-    SESSIONS.setdefault(pending["session_id"], []).append(pipeline.as_prior(result))
+    _remember(pending["session_id"], pipeline.as_prior(result))
 
 
 async def _stream_replay(socket: WebSocket, pending: dict) -> None:
