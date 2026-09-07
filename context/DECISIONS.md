@@ -573,3 +573,26 @@ The key is now read, the recogniser is selected per profile, and the Devanagari 
 **The model is not deployed.** PaddleOCR publishes Devanagari as a Paddle inference model; every `paddle2onnx` on PyPI imports `paddle`, and the PaddlePaddle download timed out here. `scripts/fetch_ocr_models.py` does the fetch and conversion when the toolchain exists and otherwise says exactly what is missing. Until then the evidence string names the cause.
 
 **Deliberately not built:** a Hindi-versus-Latin cross-script consistency check. It would be a real tamper signal and it needs transliteration; an approximate comparison feeding a mismatch signal is precisely the failure just fixed in Layers C and D.
+
+---
+
+## D45 — The VLM fallback yields to the machine-readable zone
+
+**Rejected:** running Florence-2 whenever nothing was located, including on documents whose MRZ had just been read successfully.
+
+**Why:** it spends the whole remaining budget re-reading fields we already hold, and holds better. A verified MRZ carries surname, given names, document number, nationality, date of birth, sex and expiry — every field the VLM could offer for a TD3 — each with its own ICAO check digit. That is `arithmetic` trust against the fallback's `unverified`, and it arrives in about two seconds rather than seven.
+
+Measured over ten generated passports, full screening end to end:
+
+| | median |
+|---|---|
+| MRZ read, fallback skipped (9 of 10) | **1,702 ms** |
+| MRZ unread, fallback runs to its 8 s ceiling (1 of 10) | **9,634 ms** |
+
+A 5.6× difference on the common path, and the documents it helps are precisely the ones that were sitting against the timeout.
+
+**What it costs, stated rather than buried:** the few printed fields a TD3 does not carry. A passport prints the father's name; the MRZ does not. Those reads would have arrived `unverified`, which `COMPARABLE_SOURCES` already bars from contradicting the MRZ or a signed payload (D37) — so they were evidence, never verification. Seven seconds is too much to pay for that.
+
+**The skip is announced, not silent.** `extraction.vlm.ratified` reports `not_applicable` saying the fallback was not needed because the zone supplied these fields with their own check digits. A check that quietly does not run is the thing this system spends most of its evidence strings avoiding.
+
+**Where the fallback still earns its place:** documents with no MRZ — Aadhaar, PAN, Voter ID, DL — where it contributes correct dates and grounded regions and there is no better reader. The guard keys on `ctx.fields["mrz"]`, which `_mrz_from_its_fixed_position` sets only once the strip's own check digits agree, so it is a verified read and not merely a read.

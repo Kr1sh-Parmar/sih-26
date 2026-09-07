@@ -243,8 +243,35 @@ def _fallback(ctx: ScreeningContext, so_far: list[Signal]) -> list[Signal]:
     It fires at most once per document. Eight seconds is the ceiling and this
     is the fallback, not a second opinion - running it per unread field would
     multiply that by however many fields were unreadable.
+
+    **It does not fire at all once the machine-readable zone has been read.**
+    That is a later addition and it is the largest latency win in the module:
+    a verified MRZ already carries surname, given names, document number,
+    nationality, date of birth, sex and expiry, each with its own ICAO check
+    digit - every field the VLM could offer, at `arithmetic` trust instead of
+    `unverified`, in about two seconds instead of seven. Running Florence-2
+    afterwards spends the remaining budget re-reading fields we hold better,
+    on exactly the documents already sitting against the 8 s ceiling.
+
+    What that costs is real and small: the few printed fields a TD3 does not
+    carry - a passport prints the father's name, the MRZ does not. Those reads
+    would arrive `unverified`, which `COMPARABLE_SOURCES` already bars from
+    contradicting the MRZ or a signed payload (D37), so they were evidence
+    rather than verification. Seven seconds is too much to pay for that.
     """
     from modules.extraction import vlm
+
+    if "mrz" in ctx.fields:
+        # `_mrz_from_its_fixed_position` only stores the strip once its own
+        # check digits agree, so this is a verified read, not merely a read.
+        return [Signal(
+            id="extraction.vlm.ratified", module="extraction", tier=1,
+            verdict="not_applicable", confidence=1.0, trust_class="arithmetic",
+            hard_fail=False, anchor="document",
+            evidence="The fallback reader was not needed - the machine-readable "
+                     "zone was read from its standard position and supplies "
+                     "these fields with their own check digits",
+        )]
 
     nothing_located = not ctx.field_boxes
     # No trailing dot on the prefix, deliberately: the contract guard in
