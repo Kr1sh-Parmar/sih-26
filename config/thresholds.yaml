@@ -16,13 +16,22 @@ face:
   doc_live:
     threshold: 0.32            # TODO calibrate on >=500 doc-vs-live pairs, >=30 people
     review_band: [0.26, 0.38]  # escalate to Tier 2 inside this band
-    calibrated: false          # flipped to true only by modules/face/calibrate.py
+    calibrated: false          # flipped only by data/tools/calibrate_face.py
   gallery:
     threshold: 0.45            # stricter than 1:1 — many comparisons, not one
     calibrated: false
   liveness:
     passive_pass: 0.60
     uncertain_band: [0.40, 0.60]
+  # Quality of the FACE CROP, not of the page. The `quality` block above gates
+  # the whole capture; a crisp document can still carry a portrait too soft to
+  # embed, and that is the capture whose match score is a guess.
+  quality:
+    doc_blur_min: 30.0         # printed photos are softer than a camera frame
+    live_blur_min: 80.0
+    doc_min_px: 48             # face width; below this the 112px crop is upscaled guesswork
+    live_min_px: 80
+    max_yaw: 0.35              # nose offset between the eyes, 0 square to 1
 
 gate:
   tamper_clear_below: 0.15

@@ -4,10 +4,10 @@ Everything needed to train the field detector somewhere else and bring the
 result back. Rationale for the configuration lives in `data/TRAINING.md`; this
 file is the operational handoff — paths, commands, and what has to come back.
 
-**Only one model is trained in this project today: the 22-class field detector.**
-Face embedding, liveness and tamper models are not wired yet, so nothing is
-trained for them. OCR is not trained at all — RapidOCR ships PP-OCRv4 inside the
-wheel.
+**Only one model is trained in this project: the 22-class field detector.**
+Everything else is either pre-trained and fetched at build time (OCR, face
+detection, face embedding) or needs no training at all (the classical tampering
+track). See the table at the end.
 
 ---
 
@@ -20,7 +20,7 @@ wheel.
 | Best so far | `runs/fields/weights/best.pt`, epoch 1 — mAP50 0.448, mAP50-95 0.263 |
 | Last | `runs/fields/weights/last.pt`, epoch 2 — mAP50 0.470, mAP50-95 0.257 |
 | Speed on this box | ~1400 s/epoch (RTX 3050 6 GB laptop) → 100 epochs ≈ 38 h |
-| `models/` | **does not exist.** Nothing has been exported. |
+| `models/` | exists, but holds only the **face** models. No field detector has been exported. |
 
 The 38-hour figure is why this is moving to an external GPU. Epoch 2 of a
 100-epoch cosine schedule is worth roughly nothing — plan on a fresh run, not a
@@ -78,7 +78,9 @@ models/field_detector_22cls.int8.onnx   shipped — preferred by the loader
 models/field_detector_22cls.json        metadata sidecar
 ```
 
-`models/` is gitignored and does not exist yet. `core/registry.py:model_path()`
+`models/` is gitignored. It currently holds the two face models fetched by
+`scripts/fetch_face_models.py`; nothing for the field detector.
+`core/registry.py:model_path()`
 prefers `.int8.onnx`, falls back to `.onnx`, and returns `None` if neither is
 there — absence is a supported state, not a crash. `core/registry.py:metadata()`
 reads the sidecar; `modules/extraction/detect.py:72` takes the **class list and
@@ -231,6 +233,7 @@ For completeness, so nobody goes looking:
 | Model | Where it comes from |
 |---|---|
 | OCR (PP-OCRv4 det/cls/rec) | ships inside the `rapidocr_onnxruntime` wheel, 16 MB. Never trained, never downloaded at runtime. |
-| Face embedding, liveness, 1:N | not wired. `modules/face/` is a stub; every signal is `inconclusive`. |
-| Tamper detectors | not wired. `modules/tamper/` is a stub; the classical track needs no training data when it lands. |
+| Face detection and embedding | not trained — SCRFD + ArcFace come from insightface `buffalo_sc`, fetched at build time by `scripts/fetch_face_models.py`. See `data/FACE.md`. |
+| Passive liveness | not trained and **not deployed**. MiniFASNet ships as PyTorch and needs an ONNX conversion plus a licence read. `data/FACE.md`. |
+| Tamper detectors | not trained and never will be — the classical track is OpenCV, no training data. Measured in `data/TAMPERING.md`. |
 | Document-type classifier | not built. The officer selects the type at the counter, so it reports `not_applicable`. |

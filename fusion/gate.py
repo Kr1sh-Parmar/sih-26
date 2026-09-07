@@ -51,10 +51,10 @@ def decide(signals: list[Signal], profile: dict) -> tuple[Decision, str]:
             f"above {cfg['tamper_escalate_above']}"
         )
 
-    if _in_review_band(signals, "face.match.cosine", "face", "review_band"):
+    if _uncertain(signals, "face.match.cosine"):
         return "escalate", "Face match falls in the review band"
 
-    if _in_review_band(signals, "face.liveness.passive", "liveness", "uncertain_band"):
+    if _uncertain(signals, "face.liveness.passive"):
         return "escalate", "Passive liveness score is uncertain"
 
     if tamper > cfg["tamper_clear_below"]:
@@ -63,11 +63,22 @@ def decide(signals: list[Signal], profile: dict) -> tuple[Decision, str]:
     return "clear", "Deterministic checks clear, no escalation triggered"
 
 
-def _in_review_band(signals: list[Signal], sid: str, group: str, key: str) -> bool:
-    th = load_config("thresholds")["face"]
-    band = th["doc_live"][key] if group == "face" else th[group][key]
+def _uncertain(signals: list[Signal], sid: str) -> bool:
+    """Escalate when a face check reached a verdict it is not sure of.
+
+    This used to read `confidence` as if it carried the raw score and test it
+    against the configured band directly. That made `confidence` mean two
+    incompatible things at once: the gate wanted the cosine, and fusion's
+    noisy-OR wants certainty. Reading it as a score meant a *confident*
+    impostor - cosine 0.10, far below any threshold - arrived at fusion as
+    confidence 0.10 and barely moved the score, which is the D10 failure one
+    layer down: wrong in the direction that admits fraudsters.
+
+    `confidence` is certainty now, everywhere, as the contract says. The face
+    module scales it so that anything inside the configured review band comes
+    out below 1.0, which is an exact translation of the old test.
+    """
     for s in signals:
-        if s.id == sid and s.verdict in ("pass", "fail"):
-            if band[0] <= s.confidence <= band[1]:
-                return True
+        if s.id == sid and s.verdict in ("pass", "fail") and s.confidence < 1.0:
+            return True
     return False

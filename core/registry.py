@@ -18,6 +18,13 @@ MODELS = ROOT / "models"
 
 FIELD_DETECTOR = "field_detector_22cls"
 
+#: Face models, fetched by scripts/fetch_face_models.py at build time. Absent is
+#: a normal state and every caller degrades to `inconclusive`, same as the field
+#: detector.
+FACE_DETECTOR = "face_detector"
+FACE_EMBEDDING = "face_embedding"
+LIVENESS = "face_liveness"
+
 #: More threads is not faster on models this small - the split costs more than
 #: it saves, and the box is also serving a websocket. Override per deployment.
 THREADS = int(os.environ.get("SCREENING_ORT_THREADS", "4"))
@@ -69,6 +76,10 @@ def session(name: str):
     options.intra_op_num_threads = THREADS
     options.inter_op_num_threads = 1
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    # Errors only. SCRFD is traced at a fixed input size and run at another, so
+    # every detection prints nine harmless shape warnings - which would bury a
+    # real message in the demo console.
+    options.log_severity_level = 3
     return ort.InferenceSession(str(path), options,
                                 providers=["CPUExecutionProvider"])
 
@@ -89,11 +100,22 @@ def ocr_engine():
     return RapidOCR(intra_op_num_threads=THREADS)
 
 
+def _version(name: str) -> str | None:
+    """`<source>@<hash>` for the audit log, or None when genuinely not deployed."""
+    meta = metadata(name)
+    if not meta or not available(name):
+        return None
+    label = meta.get("source") or meta.get("name", name)
+    return f"{label}@{meta.get('sha256', '')[:12]}"
+
+
 def versions() -> dict:
     """What actually ran, for the audit log.
 
     A screening event has to say which models produced it or it cannot be
-    honestly re-scored later. `None` means the model is genuinely not deployed.
+    honestly re-scored later. `None` means the model is genuinely not deployed -
+    these were hardcoded `None` while the face module was a stub, which would
+    have kept claiming no face model was deployed long after one was.
     """
     detector = metadata(FIELD_DETECTOR)
     return {
@@ -102,8 +124,9 @@ def versions() -> dict:
             f"@{detector.get('sha256', '')[:12]}" if detector else None
         ),
         "ocr": _ocr_version(),
-        "face_embedding": None,
-        "liveness": None,
+        "face_detector": _version(FACE_DETECTOR),
+        "face_embedding": _version(FACE_EMBEDDING),
+        "liveness": _version(LIVENESS),
         "pipeline": "spine-1",
     }
 
@@ -124,11 +147,12 @@ def warm() -> dict:
     """
     loaded, missing = [], []
 
-    if available(FIELD_DETECTOR):
-        session(FIELD_DETECTOR)
-        loaded.append(FIELD_DETECTOR)
-    else:
-        missing.append(FIELD_DETECTOR)
+    for name in (FIELD_DETECTOR, FACE_DETECTOR, FACE_EMBEDDING, LIVENESS):
+        if available(name):
+            session(name)
+            loaded.append(name)
+        else:
+            missing.append(name)
 
     try:
         engine = ocr_engine()

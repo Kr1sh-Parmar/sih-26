@@ -72,6 +72,15 @@ def build_context(image_bytes: bytes, doc_type: str, session_id: str,
     )
 
 
+def decode_live(image_bytes: bytes) -> np.ndarray:
+    """The live camera frame. A second capture, not a second read of the first.
+
+    Decode-once (CLAUDE.md rule 6) is about not re-reading the *document*; the
+    live frame is a different photograph and has to enter somewhere.
+    """
+    return decode(image_bytes)
+
+
 def screen(ctx: ScreeningContext, *, anchors: TrustAnchorStore | None = None,
            store=None, uploaded: bool = False,
            raw: bytes | None = None) -> Iterator[Event]:
@@ -120,7 +129,8 @@ def screen(ctx: ScreeningContext, *, anchors: TrustAnchorStore | None = None,
             if s.tier == 2:
                 ctx.signals.append(s)
                 yield Event("signal", {"signal": s})
-        for s in face.run(ctx, tier=2):
+        for s in face.run(ctx, tier=2, store=store,
+                          doc_hash=_hash_of(ctx, verification)):
             if s.tier == 2:
                 ctx.signals.append(s)
                 yield Event("signal", {"signal": s})
@@ -177,8 +187,22 @@ def _hash_of(ctx: ScreeningContext, verification: Verification | None) -> str:
 
 
 def persist(result: Result, store, officer_id: str | None = None) -> str:
-    """Record the event. Full signal list, hashed identity number, no raw PII."""
+    """Record the event. Full signal list, hashed identity number, no raw PII.
+
+    The face embedding is stored; the crop is not. A 512-float vector cannot be
+    turned back into a face, and raw face images do not outlive the session
+    (TECHNICAL-SPEC.md section 9). Without this the 1:N gallery has nothing to
+    search and would report "no duplicate" forever, which reads as a pass.
+    """
     number = result.ctx.fields.get("id_number")
+    event_id = _record(result, store, number, officer_id)
+    embedding = result.ctx.embeddings.get("live") or result.ctx.embeddings.get("doc")
+    if embedding is not None:
+        store.add_face(event_id, embedding)
+    return event_id
+
+
+def _record(result: Result, store, number, officer_id) -> str:
     return store.record_event(
         session_id=result.ctx.session_id,
         doc_type=result.ctx.doc_type,

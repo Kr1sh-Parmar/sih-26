@@ -36,6 +36,7 @@ weights:
   validation.vizmrz.*:          0.20
   tamper.stamp.*:               0.15
   face.match.cosine:            0.10
+  face.*:                       0.10
   validation.*:                 0.10
   tamper.*:                     0.05
   extraction.*:                 0.05

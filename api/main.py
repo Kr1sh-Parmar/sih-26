@@ -107,8 +107,15 @@ async def create_screening(
     doc_type: str = Form(...),
     session_id: str = Form(...),
     uploaded: bool = Form(False),
+    live: UploadFile | None = None,
 ) -> dict:
-    """Accept a capture and return an id. The socket does the work."""
+    """Accept a capture and return an id. The socket does the work.
+
+    `live` is the optional camera frame of the person presenting the document.
+    It rides on `ctx.faces['live']`, which the frozen contract already carries,
+    so accepting it costs no contract change. Without it the face module reports
+    what it can about the printed photo and marks the comparison `inconclusive`.
+    """
     if doc_type not in DOC_TYPES:
         raise HTTPException(400, f"unknown document type {doc_type!r}")
 
@@ -118,6 +125,12 @@ async def create_screening(
                                      prior_docs=SESSIONS.get(session_id, []))
     except DecodeError as exc:
         raise HTTPException(400, str(exc))
+
+    if live is not None:
+        try:
+            ctx.faces["live"] = pipeline.decode_live(await live.read())
+        except DecodeError as exc:
+            raise HTTPException(400, f"live capture: {exc}")
 
     screening_id = str(uuid.uuid4())
     PENDING[screening_id] = {

@@ -68,9 +68,16 @@ tamper.digital.noise_residual
 
 face.doc.detected                    face.doc.quality
 face.live.detected                   face.live.quality
+face.live.quality.blur               face.live.quality.resolution
 face.liveness.passive                face.liveness.active
 face.match.cosine                    face.gallery.duplicate
 ```
+
+`face.live.quality.blur` and `face.live.quality.resolution` are the live-capture
+half of `core/quality.py`, which builds them by f-string. The registry check in
+`tests/test_contracts.py` skips f-strings, so they were emitted unregistered
+until the face module landed. Registered now: an id an audit log can carry has
+to be in this list whether or not the guard can see it.
 
 ---
 
