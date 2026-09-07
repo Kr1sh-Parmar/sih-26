@@ -12,6 +12,9 @@
 # --- extraction ------------------------------------------------------------
 extraction.quality.blur:                 0.80
 extraction.quality.resolution:           1.00
+# Under- or over-exposure destroys the glyph contrast OCR needs. A real effect,
+# but a softer one than blur: a dim capture is often still readable.
+extraction.quality.brightness:           0.70
 extraction.doctype.confidence:           0.70
 extraction.vlm.ratified:                 0.60
 extraction.vlm.unratified:               0.20
@@ -67,6 +70,9 @@ face.doc.detected:                       0.90
 face.doc.quality:                        0.70
 face.live.detected:                      0.90
 face.live.quality:                       0.70
+face.live.quality.blur:                  0.70
+face.live.quality.resolution:            1.00
+face.live.quality.brightness:            0.70
 face.liveness.passive:                   0.65
 face.liveness.active:                    0.80
 face.match.cosine:                       0.75

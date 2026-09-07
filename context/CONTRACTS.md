@@ -45,6 +45,7 @@ Register new IDs here. They are stable strings used in weights, tests, and audit
 
 ```
 extraction.quality.blur              extraction.quality.resolution
+extraction.quality.brightness
 extraction.doctype.confidence        extraction.field.<name>.confidence
 extraction.ocr.<field>.confidence    extraction.vlm.ratified
 extraction.vlm.unratified
@@ -69,15 +70,38 @@ tamper.digital.noise_residual
 face.doc.detected                    face.doc.quality
 face.live.detected                   face.live.quality
 face.live.quality.blur               face.live.quality.resolution
+face.live.quality.brightness
 face.liveness.passive                face.liveness.active
 face.match.cosine                    face.gallery.duplicate
 ```
 
-`face.live.quality.blur` and `face.live.quality.resolution` are the live-capture
-half of `core/quality.py`, which builds them by f-string. The registry check in
+`face.live.quality.{blur,resolution,brightness}` are the live-capture half of
+`core/quality.py`, which builds them by f-string. The registry check in
 `tests/test_contracts.py` skips f-strings, so they were emitted unregistered
 until the face module landed. Registered now: an id an audit log can carry has
 to be in this list whether or not the guard can see it.
+
+### One check, one id
+
+**No two checks may share a signal id, and no screening may emit an id twice.**
+An id is the key a re-scoring reads years later, the key `reliability()` looks a
+weight up under, and the key a profile names in `weights` and `hard_fail`.
+Sharing one breaks all three quietly: the audit log cannot say which check
+produced a verdict, the softer check borrows the harder one's weight, and both
+land in the same anchor group so **both count against coverage** - the
+correlated-signal double count D8 exists to prevent, committed inside one
+pipeline instead of across two.
+
+Two instances existed and are now guarded by `tests/test_signal_identity.py`.
+`core/quality.py` filed brightness under the blur id, and under
+`face.live.quality` - the face-crop gate's id - on the live path.
+`modules/extraction/qr.py` emitted `validation.signature.valid` for a condition
+Layer A already reported, so on a passport, where it is weighted 0.25, a missing
+signature cost coverage twice. Neither looked wrong; both were one line.
+
+A templated family - `extraction.field.<name>.confidence`,
+`validation.mrz.checkdigit.<field>` - is fine, because the field name is in the
+id and each instance is still unique.
 
 ---
 
