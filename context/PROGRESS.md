@@ -25,50 +25,37 @@ module" — they are measurement, data, and a short list of unwritten code.
 
 ---
 
-## Done this session
-
-Three agents were dispatched in parallel and all three were killed mid-flight by
-a DNS/API outage. Two had landed work; the rest was finished directly. Every item
-below is verified, not assumed.
-
-| Work | Where | Verified by |
-|---|---|---|
-| `POST /rescore/batch` — one request for a page of events, single shared scoring path, 200-event cap, unreadable events omitted rather than failing the batch | `api/main.py` | 4 new tests in `tests/test_rescore.py` |
-| Audit screen N+1 removed — one batched request, debounced 150 ms, results keyed by `event_id` and never by position | `frontend/src/screens/Audit.tsx`, `transport/socket.ts` | 3 new vitest tests; all 4 console gates |
-| **Phonetic watchlist near-matching** (Layer E) — Soundex buckets + `difflib` ratio, stdlib only | `modules/validation/layer_e.py`, `core/store.py` | 5 new tests; measured on the real 8,256-row list |
-| **Impossible transit now fires** (Layer F) — `post_id` column, additive migration, `config/posts.yaml` with haversine distance | `modules/validation/layer_f.py`, `core/store.py`, `config/posts.yaml` | 6 new tests (the layer had none before) |
-| D46, D47 recorded; stale "VLM fallback is still a stub" docstring corrected | `context/DECISIONS.md`, `modules/extraction/__init__.py` | — |
+## Done — session of 2026-09-08
 
 ```
-python -m pytest -q     357 passed, 6 skipped   (was 342 passed, 6 skipped)
-frontend npm run verify  4/4 gates, 34 tests    (was 31)
+python -m pytest     364 passed, 6 skipped   (baseline 342 / 6)
+frontend verify      4/4 gates, 34 tests     (baseline 31)
 ```
 
-### The one design decision worth re-reading
+### Three bugs found that would have been seen by the panel
 
-`validation.watchlist.hit` is listed under `hard_fail` in all six profiles — a
-`fail` from Layer E is RED, detain, on the spot. So phonetic matching emits
-**`inconclusive`, never `fail`**. A guess about spelling must not be able to
-detain anyone. Full reasoning in D46.
-
-Measured on the loaded OFAC + UN list: index build 72 ms once per process,
-lookup p50 0.06 ms / p95 0.11 ms, recall 56/60 on vowel-transliterated names,
-0 false positives on 15 unrelated Indian names.
-
-### Also measured this session
-
-Extraction without the field detector, on the generated documents:
-
-| Document | What is read today |
+| | |
 |---|---|
-| passport | **MRZ read and check-digit verified** from its ICAO fixed position. The VLM fallback correctly stands down (D45). |
-| aadhaar | nothing — no MRZ, and the VLM fallback did not recover a usable field |
-| pan | nothing |
+| **A retyped passport scored GREEN** | `COMPARABLE_SOURCES` contained `qr`, so with no detector the VIZ/MRZ check compared the *signed payload* against the MRZ — two things the issuer made together — and reported six passes reading "matches printed" when nothing printed was read. A passport with its print band wiped and reprinted was cleared at coverage 0.752. Now AMBER 0.496. **The fix declines to clear it; it does not detect it.** Detection returns with the detector. |
+| **The container told Indian passports that IND is not a country** | The 134 KB ISO 3166 table lives under `data/raw/`, excluded wholesale. Fallback left 16 ICAO codes, so `is_country_code("IND")` was False in every fresh clone and in the image. Table now ships; a missing table now reports `inconclusive` rather than blaming the document. |
+| **The calibration session could not have been run** | `render.py` could only pick a portrait from the SFHQ pool by seed, so a volunteer's photo could not go on a card — and their real ID may never be used. `extras["portrait_path"]` now overrides, and a missing file raises rather than silently pairing one person's document with another's face. |
 
-So DEMO.md's "nothing printed can be read" is right for Aadhaar and PAN and
-**overstated for passport** — the MRZ path already switches on all five ICAO
-check digits and the whole VIZ/MRZ cross-check. That is worth re-checking when
-the detector lands and the rehearsal record is rewritten.
+### Also landed
+
+- `POST /rescore/batch`; audit screen N+1 removed (one debounced request, keyed by `event_id`).
+- **Phonetic watchlist matching** — Soundex + `difflib`, stdlib only. Emits `inconclusive`, never `fail`, because `watchlist.hit` is `hard_fail` in all six profiles and a guess about spelling must not detain anyone. 56/60 recall, 0 false positives, p95 0.11 ms.
+- **Impossible transit fires** — `post_id` column (additive; the audit log is never rewritten), `config/posts.yaml`, haversine. Default stays `not_applicable` on a single post. The layer had no tests; it has six.
+- **Latency measured end to end for the first time**: passport p50 1,352 / p95 7,073 ms; Aadhaar and PAN ~6 s in the VLM fallback. Against the 1,020 ms budget it **does not fit**.
+- **"Under 500 MB warm" corrected**: 154 MB idle, 185 MB working, **1,556 MB once Florence-2 loads** — which is every Aadhaar and every PAN today.
+- Calibration/bias/liveness harnesses all proven to run; two `--apply` bugs fixed in `calibrate_face.py` that would only have bitten on the day. `calibrated: false` untouched.
+- `docs/PROVENANCE-SLIDE.md`; pycountry declined (strict subset of what is already held).
+- D46, D47 recorded.
+
+### Known-open, and deliberately so
+
+- **Latency misses budget on every document type.** Expected to improve when the detector replaces the VLM fallback on MRZ-less documents, but it is not measured and must not be claimed.
+- **Florence-2 memory.** 1.5 GB resident is a real constraint on checkpoint hardware.
+- Docker was never built here — not on PATH, engine down. Phase 5's clean-build gate is still open and has to run on the demo box.
 
 ---
 
