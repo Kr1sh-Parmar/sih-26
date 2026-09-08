@@ -106,6 +106,22 @@ def _portrait(who: Identity, size) -> Image.Image:
     photograph on each of their cards - invisible in a single document and
     fatal in a session, since Scene 3 puts two of them side by side.
     """
+    explicit = who.portrait_path
+    if explicit:
+        # The calibration workflow: this volunteer's photograph, on a card that
+        # will be printed and scanned to become the document half of a
+        # doc-vs-live pair. Fail loudly - a session that silently fell back to
+        # a stranger's face would calibrate the threshold against noise.
+        path = Path(explicit)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"portrait_path {path} does not exist. The calibration set "
+                f"needs this volunteer's own photograph on the card; falling "
+                f"back to the synthetic pool would pair one person's document "
+                f"with another person's face."
+            )
+        return Image.open(path).convert("RGB").resize(size, Image.LANCZOS)
+
     pool = faces()
     if not pool:
         # A flat panel is still a locatable region, so the class keeps its

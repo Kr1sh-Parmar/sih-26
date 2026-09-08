@@ -43,6 +43,7 @@ pytestmark = needs_generator
 if HAVE_DEPS:
     from data.generator import DOC_TYPES, build, session
     from data.generator import identity as I
+    from data.generator import render
     from data.generator.render import ONTOLOGY, load_template
     from modules.extraction import mrz
     from modules.validation.checksums import (check_aadhaar, check_dl,
@@ -189,6 +190,50 @@ def test_a_session_puts_one_persons_face_on_all_their_documents():
         crops.append(cv2.resize(doc.image[y1:y2, x1:x2], (96, 96)))
     difference = np.abs(crops[0].astype(int) - crops[1].astype(int)).mean()
     assert difference < 12, f"different faces on one person's documents ({difference:.0f})"
+
+
+def test_a_named_portrait_lands_on_the_card_and_a_missing_one_is_loud():
+    """What makes the doc-vs-live calibration set obtainable at all.
+
+    A volunteer's own government ID may never be used (CLAUDE.md rule 4), so
+    the document half of a pair is their photograph rendered onto a synthetic
+    card, printed and scanned. Before `portrait_path` the generator could only
+    pick from the SFHQ pool by seed, so there was no way to put a specific
+    person on a specific card - which quietly blocked the whole session.
+
+    The missing-file case raises rather than falling back to the pool. A silent
+    fallback would pair one volunteer's document with a stranger's face, and a
+    genuine pair scored as an impostor pair drags the threshold *down* - making
+    the system more willing to accept a stranger. Nothing downstream can see
+    that happen.
+    """
+    import cv2
+    pool = render.faces()
+    if len(pool) < 2:
+        pytest.skip("no face pool; run python data/tools/pull_faces.py")
+
+    def card(portrait):
+        who = I.build(seed=3)
+        who.extras["face_seed"] = 0          # pool face 0, deliberately not ours
+        if portrait is not None:
+            who.extras["portrait_path"] = str(portrait)
+        return render.render("aadhaar", who)
+
+    def photo_on(doc):
+        box = next(b for name, *b in doc.labels if name == "person_photo")
+        x1, y1, x2, y2 = box
+        page = np.array(doc.image.convert("RGB"))    # render() yields PIL
+        return cv2.resize(page[y1:y2, x1:x2], (96, 96)).astype(int)
+
+    chosen = pool[7 % len(pool)]
+    named = photo_on(card(chosen))
+    pooled = photo_on(card(None))
+    assert np.abs(named - pooled).mean() > 12, (
+        "portrait_path was ignored - the card still shows the pool face"
+    )
+
+    with pytest.raises(FileNotFoundError):
+        card(ROOT / "data" / "raw" / "faces" / "__no_such_volunteer__.jpg")
 
 
 @pytest.mark.skipif(not (ROOT / "var" / "issuer" / "SIH-REF-01.key").exists(),

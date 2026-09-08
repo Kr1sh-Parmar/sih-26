@@ -104,6 +104,22 @@ class Identity:
         """
         return int(self.extras.get("face_seed", 0))
 
+    @property
+    def portrait_path(self) -> str | None:
+        """An explicit portrait file, overriding the SFHQ pool.
+
+        Set only by the doc-vs-live calibration workflow, where the whole point
+        is that the face on the card is a *specific consenting volunteer* whose
+        live capture will be compared against it. Everywhere else this is None
+        and `face_seed` picks from the synthetic pool, because no real face
+        belongs on a generated document (CLAUDE.md rule 4).
+
+        The volunteer's own government ID cannot be used for this and never
+        will be. Their photograph on a synthetic card is what makes a
+        doc-vs-live pair obtainable without one.
+        """
+        return self.extras.get("portrait_path") or None
+
     def mrz(self) -> str:
         """The TD3 strip for this person's passport. Every check digit real."""
         return mrz.build_td3(
