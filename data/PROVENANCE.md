@@ -212,7 +212,118 @@ out of scope. `python data/tools/pull_faces.py` fetches more.
 
 | **Roboflow Universe exports** | Export needs a private API key. The publishable key (`rf_…`) is rejected by the export API, and the MCP export link 404s at storage. |
 
-| **ISO 3166-1** | `pip install pycountry` — a dependency, not a download. |
+| ~~**ISO 3166-1**~~ | **Closed 2026-09-08 — not blocked, and pycountry declined.** See §pycountry below. |
 
 | **Official Indian specimens** | PRADO (Indian passport), UIDAI sample Aadhaar/PVC, ITD PAN, ECI EPIC, Parivahan DL. Manual collection; the template base for the generator. |
+
+---
+
+## pycountry — asked for, declined (2026-09-08)
+
+`pip install pycountry` succeeded (26.2.16, 8.0 MB wheel) and imports with
+every socket monkeypatched, so it is offline-safe. It was still declined and
+uninstalled. Three reasons, in order of weight.
+
+**1. The data is already here.** Layer B does not carry a hardcoded list.
+`modules/extraction/normalize.py:country_codes()` reads
+`data/raw/reference/iso3166/country-codes.csv` — the 134 KB public-domain file
+already recorded in the Reference data table above — and merges 16 ICAO
+supplementary codes. On this machine it resolves **265 codes**, `IND`
+included. There is nothing to fix in the list.
+
+**2. pycountry is a strict subset.** It carries the same 249 ISO alpha-3 codes
+and **none** of the ICAO supplementary ones. Checked, not assumed:
+
+```
+pycountry.countries.get(alpha_3=c) for c in ("D","GBD","XXA","XXX","RKS","UNO")
+  -> None, None, None, None, None, None
+```
+
+Those are exactly the codes a Layer B driven only by ISO would use to fail a
+genuine German or stateless-person travel document. `ICAO_EXTRA` stays
+hand-maintained against Doc 9303 either way, so pycountry would replace the
+easy half of the problem with an 8 MB dependency and leave the hard half
+untouched.
+
+**3. It would land in the wrong file.** `is_country_code()` lives in
+`modules/extraction/normalize.py`, not `layer_b.py`. Duplicating a country
+lookup inside Layer B to avoid touching the shared function is how the same
+list ends up maintained in two places.
+
+### The real defect this turned up — one for whoever owns the ignore files
+
+`country_codes()` degrades **silently** when the CSV is absent, and the CSV is
+absent everywhere except a developer's working copy:
+
+```
+with CSV:    265 codes, is_country_code("IND") -> True
+without CSV:  16 codes, is_country_code("IND") -> False
+```
+
+`data/raw/` is excluded by both `.gitignore` (line 7) and `.dockerignore`. So
+in **the shipping container and in any fresh clone**, a genuine Indian passport
+whose MRZ yields `nationality=IND` — and the MRZ path reads today, without the
+field detector, per `context/PROGRESS.md` — produces:
+
+> `validation.format.passport.nationality` → **fail**
+> "Nationality IND is not a recognised ISO 3166 or ICAO code"
+
+Not a hard fail on the passport profile, so it will not detain anyone, but it
+is a `fail` on a genuine document in Scene 1 of the demo, and
+`docker compose up` is on the 24-hour checklist. Two candidate fixes:
+
+| Fix | Cost |
+|---|---|
+| Un-ignore that one file in `.gitignore` and `.dockerignore` | 134 KB, no dependency, two lines |
+| Add pycountry to `requirements.txt` and rewrite `country_codes()` | 8.0 MB, a new dependency, and still needs `ICAO_EXTRA` |
+
+The first one is obviously right. Both files are outside this agent's scope,
+so it is written down rather than done. Worth a test that asserts
+`is_country_code("IND")` in an environment where `data/raw/` does not exist —
+that is what would have caught it.
+
+---
+
+## Clean container build — attempted 2026-09-08, could not run
+
+`context/DEMO.md`'s 24-hour checklist and ROADMAP Phase 5 both require
+`docker compose down -v && docker compose up` from clean. **Not attempted on
+this machine: there is no Docker CLI on it.**
+
+```
+$ docker version
+bash: docker: command not found
+
+PS> docker version
+docker : The term 'docker' is not recognized as the name of a cmdlet,
+function, script file, or operable program.
+```
+
+Docker Desktop is *installed* — `C:\Program Files\Docker\Docker\resources\bin\`
+holds `docker.exe`, `docker-compose.exe` and the rest — but that directory is
+not on `PATH` in either shell, and the Desktop engine was not running. Adding
+the directory to `PATH` would only get as far as the daemon.
+
+So the Phase 5 clean-build gate is **still open**, and it has to be run on the
+actual demo box rather than here anyway — that is the point of the gate. Two
+things to expect when someone does run it:
+
+1. The pip layer needs the network. This machine has an intermittent DNS
+   outage; the build box needs a working resolver or a warm pip cache.
+2. `GET /health` should report `field_detector_22cls` **missing** and the rest
+   loaded. That is a supported state, not a crash — `Dockerfile` says so and
+   the rehearsal record in `context/DEMO.md` records the same health output.
+
+---
+
+## The licence slide
+
+`docs/PROVENANCE-SLIDE.md` — the slide `context/DEMO.md` asks for on the day,
+built from this file. Seven projected slides plus a non-projected appendix.
+The two answers worth rehearsing are on slides 3 and 6: the only
+non-commercial term we actually hold is **LFW's research-use restriction**
+(DocXPand-25k and `passportdetection-rgnih` are in `context/DATA.md` but were
+scoped out on 2026-09-06 and were never pulled), and the field-detector
+training corpus contains third-party-published real Indian cards, which we
+volunteer rather than wait to be asked about.
 
