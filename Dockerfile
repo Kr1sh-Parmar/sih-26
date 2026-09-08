@@ -4,7 +4,8 @@
 #
 #   * **Every model is baked in.** Nothing is fetched on first use. The build
 #     copies whatever `models/` holds; the fetchers that fill it
-#     (`scripts/fetch_face_models.py`, `data/tools/train_fields.py`) run
+#     (`scripts/fetch_face_models.py`, `scripts/fetch_ocr_models.py`,
+#     `scripts/fetch_vlm_model.py`, `data/tools/train_fields.py`) run
 #     BEFORE the build, never inside it and never at run time. A model that
 #     downloads itself surfaces on exactly the day the cable comes out
 #     (CLAUDE.md rule 3, DEMO.md closing).

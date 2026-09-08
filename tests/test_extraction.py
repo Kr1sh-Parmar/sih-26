@@ -660,3 +660,43 @@ def test_a_hindi_profile_says_why_a_field_was_unreadable():
 
     evidence = signals["extraction.ocr.name.confidence"].evidence
     assert "Devanagari reader is not deployed" in evidence
+
+
+@pytest.mark.skipif(registry.devanagari_rec() is None,
+                    reason="Devanagari recogniser is not deployed; "
+                           "run python scripts/fetch_ocr_models.py")
+def test_the_devanagari_recogniser_actually_reads_devanagari():
+    """`ocr_lang: [en, hi]` on aadhaar, voter_id and dl was half true.
+
+    The bundled PP-OCRv4 recogniser's dictionary is Chinese and Latin; fed
+    Devanagari it returns an empty string at confidence 0.00 - the safe
+    failure, because empty becomes `inconclusive` rather than a wrong value,
+    but it meant a card printed only in Hindi could never be read.
+
+    Loading the model is not evidence that it reads. This renders known
+    Devanagari with the same font the generator prints and asserts the
+    characters come back.
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    font_path = root / "data" / "templates" / "fonts" / "NotoSansDevanagari-Regular.ttf"
+    if not font_path.exists():
+        pytest.skip("Devanagari font absent; run python scripts/fetch_fonts.py")
+
+    font = ImageFont.truetype(str(font_path), 48)
+    for want in ("आधार", "नाम"):   # "aadhaar", "name"
+        image = Image.new("RGB", (520, 96), (255, 255, 255))
+        ImageDraw.Draw(image).text((14, 14), want, font=font, fill=(0, 0, 0))
+        patch = np.array(image)[:, :, ::-1].copy()
+
+        got, confidence = ocr.read(patch, "hi")
+        assert got.strip() == want, f"read {got!r}, wanted {want!r}"
+        assert confidence > 0.8
+
+    # And the bundled Latin recogniser still returns nothing rather than a guess.
+    image = Image.new("RGB", (520, 96), (255, 255, 255))
+    ImageDraw.Draw(image).text((14, 14), "आधार", font=font, fill=(0, 0, 0))
+    latin, _ = ocr.read(np.array(image)[:, :, ::-1].copy())
+    assert "आ" not in latin

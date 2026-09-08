@@ -145,7 +145,7 @@ crop puts the reader in a different accuracy regime.
 
 ---
 
-## Devanagari — routed, not deployed
+## Devanagari — deployed 2026-09-08
 
 `aadhaar`, `voter_id` and `dl` declare `ocr_lang: [en, hi]`. Nothing read the key.
 
@@ -165,13 +165,7 @@ the safe failure, since it becomes `inconclusive` rather than a wrong value.
 Latin as well as Devanagari, so Latin runs first and the second pass only fires
 when it came back empty.
 
-**The model is not deployed.** PaddleOCR publishes Devanagari as a Paddle
-inference model; every `paddle2onnx` on PyPI imports `paddle`, and the
-PaddlePaddle download timed out on this machine.
-`scripts/fetch_ocr_models.py` fetches and converts when the toolchain is present
-and otherwise prints exactly what is missing. Until then the evidence string says
-*"If this field is printed only in Hindi, that is expected — the Devanagari
-reader is not deployed on this system"* rather than a bare "could not be read".
+**Deployed.** `paddle2onnx` plus the PaddlePaddle runtime were installed as build-time tooling (never `requirements.txt`, which is the screening image) and `scripts/fetch_ocr_models.py` converted the PP-OCRv3 Devanagari recogniser to `models/rec_devanagari.onnx`, 9.0 MB, with its 167-entry dictionary — 86 Devanagari, 79 ASCII. The Dockerfile copies `models/`, so the container gets it without fetching anything at run time.
 
 ---
 
@@ -239,3 +233,29 @@ reader is not deployed on this system"* rather than a bare "could not be read".
 | 2026-09-08 | Extraction stage p50 1,014 ms against a 250 ms budget, on the MRZ path alone. The cost is the untargeted read: `read_mrz` gets the bottom quarter of the page, not a crop |
 | 2026-09-08 | The ratifier's signals carry no `latency_ms`, so the per-stage extraction row understates the VLM path by three orders of magnitude. Trust the end-to-end row on aadhaar and pan |
 | 2026-09-08 | Memory measured (`scripts/measure_memory.py`): 154 MB warm and idle, 185 MB working on the MRZ path, **1,556 MB once Florence-2 loads**. DEMO.md's "under 500 MB warm" corrected |
+
+### Measured, and the ceiling
+
+Rendered with the generator's own `NotoSansDevanagari-Regular.ttf` and read back:
+
+| Rendered | Read | Confidence |
+|---|---|---|
+| आधार | आधार | 1.00 |
+| नाम | नाम | 1.00 |
+| भारत सरकार | भारतसरकार | 1.00 |
+| जन्म तिथि | जन्मतिथि | 0.94 |
+
+**It drops inter-word spaces.** Harmless for the single-token fields this is a
+fallback for, and it would matter for a multi-word name — which is why nothing
+compares a Devanagari read against a Latin one. That check is still deliberately
+not built: it needs transliteration, and an approximate comparison feeding a
+mismatch signal is the failure already fixed in Layers C and D.
+
+**On a real card it is harder than this table looks.** The generated cards carry
+Devanagari only in static text and field *labels* at small point size, and reads
+off those crops came back as Latin-ish noise. The clean-render numbers above are
+the model working; they are not a claim about a scanned card.
+
+| Date | Event |
+|---|---|
+| 2026-09-08 | Devanagari recogniser converted and deployed; reads clean renders at 0.94–1.00, drops spaces |
