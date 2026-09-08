@@ -41,15 +41,24 @@ def decide(signals: list[Signal], profile: dict) -> tuple[Decision, str]:
         if any(matches(p, s.id) for p in ESCALATE_ON_FAIL):
             return "escalate", s.evidence
 
-    # A document with no cryptographic anchor gets less benefit of the doubt.
-    crypto_ok = any(
-        s.trust_class == "cryptographic" and s.verdict == "pass" for s in signals
-    )
-    if not crypto_ok and tamper > cfg["tamper_escalate_above"]:
-        return "escalate", (
-            f"No cryptographic anchor and tamper indication {tamper:.2f} "
-            f"above {cfg['tamper_escalate_above']}"
-        )
+    # There is deliberately NO separate threshold for documents that carry a
+    # verified signature, and this is worth stating because the obvious design
+    # is the opposite one.
+    #
+    # A branch here used to escalate un-signed documents above a *higher*
+    # threshold (0.25) than the general rule below (0.15), which meant it never
+    # changed a decision - only the reason string. Measured across the whole
+    # range, the signed and unsigned columns were identical.
+    #
+    # The tempting repair is to invert it: let a signature buy the document
+    # more benefit of the doubt in a grey zone. That is refused. D48 measured
+    # what a signature actually proves - the payload, and nothing whatever
+    # about the ink on the card. A verified signature must not buy a document
+    # less forensic scrutiny of its printing, which is exactly the assumption
+    # that let a retyped card pass twice already.
+    #
+    # So every document escalates on the same tamper threshold, and the config
+    # carries one number instead of two that contradicted each other.
 
     if _uncertain(signals, "face.match.cosine"):
         return "escalate", "Face match falls in the review band"

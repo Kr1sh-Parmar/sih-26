@@ -676,3 +676,43 @@ A genuine signed card with its printed date of birth altered — QR untouched, s
 - an unverified signature vouches for nothing.
 
 **Weighted 0.95 in `reliability.yaml` and hard-fail on all six profiles** — stronger than the cross-document form, because there is one physical card here and the signature travels on it. It resolves to the same 0.10 profile weight as `crossdoc`, so coverage treats the two consistently.
+
+---
+
+## D49 — A finding is labelled by the evidence for its own claim
+
+**Decision:** `build_findings` sets a finding's `trust_class` from its *failing* members, not from the strongest signal that happens to share the anchor.
+
+**The mislabel.** Signals are grouped by anchor so one altered date of birth reads as one problem rather than four (D8). The group's trust class was the strongest class present. So a group holding a clean cryptographic pass and a failing tamper heuristic — which is the ordinary shape of a signed card with one noisy ELA hotspot — produced:
+
+```
+anchor=field:dob   trust=cryptographic   severity=0.270
+headline: "Character heights vary across the date of birth"
+```
+
+A probabilistic guess, in the officer's evidence list, wearing the authority of a signature. That is the exact confusion the three trust classes exist to prevent, and the system was rendering it.
+
+**The bug the mislabel was hiding.** That finding then landed in the cryptographic set carrying severity, so `apply_crypto_precedence`'s guard — *return everything untouched if any cryptographic finding is failing* — was true, and nothing was ever suppressed. The documented behaviour, a cryptographic pass suppressing probabilistic disputes about a field it confirmed, **could not fire in the one situation it was written for.** Measured before and after on a clean signature plus an ELA hotspot over a confirmed field:
+
+```
+before   trust=cryptographic   ELA finding suppressed: no
+after    trust=probabilistic   ELA finding suppressed: yes
+```
+
+**Why the failing members are the right pool.** A finding's severity comes from its failures; its headline is already the dominant failure's evidence. Labelling it by a passing member let the headline and the class beside it disagree. Both now come from the same pool, so they cannot.
+
+With no failures the finding is a pass and the strongest class present is the honest answer — a corroborated field still reports `cryptographic`, which is what drives precedence.
+
+**Safety directions, checked rather than assumed:** a failing signature still suppresses nothing, and an unconfirmed field is still never suppressed.
+
+---
+
+## D50 — Every document escalates on the same tamper threshold
+
+**Decision:** the risk gate has one tamper threshold, not one per document. The branch that gave signed and unsigned documents different treatment is removed rather than repaired.
+
+**It never worked.** `gate.py` escalated documents with no cryptographic anchor above `tamper_escalate_above` (0.25), and every document above `tamper_clear_below` (0.15) a few lines later. The stricter rule was the looser number, so it was fully shadowed. Measured across the range, the signed and unsigned columns were identical at every level — the branch changed the reason string and never the decision.
+
+**Why it is not repaired into a real differentiation.** The obvious fix is to invert the thresholds so a signature buys benefit of the doubt in a 0.15–0.25 grey zone. That is refused on the strength of D48: a signature proves the payload and says nothing about the ink. Letting a verified signature buy a card *less* forensic scrutiny of its printing is precisely the assumption that let a retyped passport and a retyped Aadhaar through. Four of six Indian documents carry no signature at all, so the differentiation would also be a differentiation against the majority of what actually crosses the border.
+
+**What was removed:** the dead branch, and `tamper_escalate_above` from `config/thresholds.yaml`, which nothing else read. Behaviour is unchanged and a test pins it — a verified signature must produce the same escalation decision as no signature at every tamper level.

@@ -34,8 +34,10 @@ face:
     max_yaw: 0.35              # nose offset between the eyes, 0 square to 1
 
 gate:
+  # One threshold, not two. Every document escalates on the same number:
+  # a verified signature proves the payload and says nothing about the ink,
+  # so it must not buy a card less forensic scrutiny (D48, D49).
   tamper_clear_below: 0.15
-  tamper_escalate_above: 0.25
 
 # Tampering. Every cut here was chosen by data/tools/eval_tamper.py from the
 # *clean* set alone - the value at which 5% of genuine cards get flagged - and
