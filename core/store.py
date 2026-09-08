@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS screening_events (
   signals         TEXT NOT NULL,
   model_versions  TEXT NOT NULL,
   officer_id      TEXT,
+  post_id         TEXT,
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS ix_events_session ON screening_events(session_id);
@@ -110,6 +111,17 @@ def hash_id_number(number: str | None) -> tuple[str | None, str | None]:
     return h, digits[-4:]
 
 
+def post_id() -> str | None:
+    """Which checkpoint this machine is, or None until a deployment says.
+
+    Read here rather than passed in by the API, because it is a property of the
+    installation and not of the request. A checkpoint does not change identity
+    between one document and the next, and threading it through every caller
+    would put a deployment fact into four call signatures.
+    """
+    return os.environ.get("SCREENING_POST_ID") or None
+
+
 class Store:
     def __init__(self, path: Path | str = DEFAULT_DB):
         self.path = Path(path)
@@ -118,7 +130,23 @@ class Store:
         self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
+        self._migrate()
         self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Additive only, and it has to stay that way.
+
+        `screening_events` is the audit log. A verdict in it may be challenged
+        months later (CONTEXT.md section 3), so a migration that rewrites or
+        drops a row destroys the thing the table exists for. Adding a nullable
+        column is safe: every event recorded before the column existed reads
+        back NULL, which is the truthful answer to "which post screened this"
+        for a machine that was not part of a network at the time.
+        """
+        have = {r["name"] for r in
+                self._conn.execute("PRAGMA table_info(screening_events)")}
+        if "post_id" not in have:
+            self._conn.execute("ALTER TABLE screening_events ADD COLUMN post_id TEXT")
 
     @contextmanager
     def _tx(self):
@@ -160,10 +188,10 @@ class Store:
             c.execute(
                 "INSERT INTO screening_events (id, session_id, doc_type, doc_hash, "
                 "id_number_hash, id_number_last4, verdict, score, coverage, signals, "
-                "model_versions, officer_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "model_versions, officer_id, post_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (event_id, session_id, doc_type, doc_hash, id_hash, last4, verdict,
                  score, coverage, json.dumps([to_json(s) for s in signals]),
-                 json.dumps(model_versions, sort_keys=True), officer_id),
+                 json.dumps(model_versions, sort_keys=True), officer_id, post_id()),
             )
         return event_id
 
@@ -282,3 +310,17 @@ class Store:
 
     def watchlist_size(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM watchlist").fetchone()[0]
+
+    def watchlist_names(self) -> list[dict]:
+        """Every listed name, for the phonetic index Layer E builds once.
+
+        Only the columns the near-match path actually reads. The exact-match
+        lookups above stay indexed queries and do not come through here - this
+        is the fallback that runs when an indexed lookup found nothing, and it
+        is why it is worth pulling the whole column into memory rather than
+        asking SQLite to do 8,000 string comparisons per screening.
+        """
+        rows = self._conn.execute(
+            "SELECT id, source, name, name_key, aliases, dob FROM watchlist"
+        ).fetchall()
+        return [dict(r) for r in rows]

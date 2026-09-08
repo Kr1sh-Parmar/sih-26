@@ -4,18 +4,19 @@ Every identity number here is synthetic: the Aadhaar numbers carry a computed
 Verhoeff digit over an arbitrary payload, and the passport numbers are made up.
 """
 import time
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pytest
 
-from core.profiles import load_profile
+from core.profiles import load_config, load_profile
 from core.store import Store
 from core.trust import Anchor, TrustAnchorStore, verify_payload
 from fusion.context import NormalizedField, ScreeningContext
 from issuer.sign import Keypair, sign
 from modules.extraction import mrz as M
-from modules.validation import layer_a, layer_b, layer_c, layer_d, layer_e, run
+from modules.validation import (layer_a, layer_b, layer_c, layer_d, layer_e,
+                                layer_f, run)
 from modules.validation.checksums import verhoeff_digit
 
 TODAY = date(2026, 9, 6)
@@ -318,6 +319,58 @@ def test_a_namesake_with_a_different_dob_is_inconclusive_not_a_detention(seeded_
     assert "Manual check" in s.evidence
 
 
+def test_a_transliteration_variant_is_found_but_never_detains(seeded_store):
+    """The spelling this layer could not previously see.
+
+    "Wonted Person" is one vowel per token away from "Wanted Person" and lands
+    in the same Soundex bucket. Finding it is the point of the near-match path -
+    and reporting it as `fail` would be a detention decided by a spell-checker,
+    so it must not.
+    """
+    ctx = passport_ctx(name=field("Wonted Person"))
+    s = by_id(layer_e.run(ctx, store=seeded_store))["validation.watchlist.hit"]
+    assert s.verdict == "inconclusive"
+    assert s.verdict != "fail"          # hard_fail in every profile. Never guess it.
+    assert "WANTED PERSON" in s.evidence
+    assert "sounds like" in s.evidence
+
+
+def test_a_near_match_is_less_confident_than_an_exact_one(seeded_store):
+    near = by_id(layer_e.run(passport_ctx(name=field("Wonted Person")),
+                             store=seeded_store))["validation.watchlist.hit"]
+    exact = by_id(layer_e.run(passport_ctx(name=field("Wanted Person"),
+                                           dob=field("1980-01-01"),
+                                           mrz_dob="1980-01-01"),
+                              store=seeded_store))["validation.watchlist.hit"]
+    assert near.confidence < exact.confidence
+
+
+def test_an_unrelated_name_is_still_a_clean_pass(seeded_store):
+    """The failure that matters more than the miss: a near-match path that
+    fires on everything teaches an officer to ignore the whole evidence list."""
+    s = by_id(layer_e.run(passport_ctx(name=field("Ravi Sharma")),
+                          store=seeded_store))["validation.watchlist.hit"]
+    assert s.verdict == "pass"
+
+
+def test_soundex_collapses_the_transliterations_it_is_there_for():
+    assert layer_e.soundex("GHARAT") == layer_e.soundex("GHORAT")
+    assert layer_e.soundex("PRADEEP") == layer_e.soundex("PRODEEP")
+    # Order-insensitive, for the same reason the exact key is.
+    assert (layer_e.phonetic_key("GHARAT PRADEEP")
+            == layer_e.phonetic_key("PRADEEP GHARAT"))
+
+
+def test_two_stores_of_equal_size_do_not_share_an_index():
+    """A module-level cache keyed on row count would have failed this."""
+    a, b = Store(":memory:"), Store(":memory:")
+    for store, name in ((a, "ALPHA ONE"), (b, "BETA TWO")):
+        store.add_watchlist_entry(source="synthetic", name=name,
+                                  name_key=" ".join(sorted(name.split())))
+    assert layer_e._nearest(a, "Alpha One") is None      # exact, handled earlier
+    assert layer_e._nearest(a, "Beta Two") is None       # not on store a at all
+
+
 def test_an_empty_watchlist_is_inconclusive_not_a_clean_pass():
     ctx = passport_ctx()
     s = by_id(layer_e.run(ctx, store=Store(":memory:")))["validation.watchlist.hit"]
@@ -401,3 +454,85 @@ def test_the_comparable_guard_admits_the_sources_that_earned_it():
     floor. `vlm` has none of the three."""
     from modules.validation import COMPARABLE_SOURCES
     assert COMPARABLE_SOURCES == frozenset({"ocr", "mrz", "qr"})
+
+
+# ----------------------------------------------------------------- Layer F
+
+
+def _event_at(store, post, *, hours_ago, number="E1009353", session="other"):
+    """Record one screening at `post`, backdated. Layer F reads created_at."""
+    import os
+    was = os.environ.get("SCREENING_POST_ID")
+    os.environ["SCREENING_POST_ID"] = post
+    try:
+        event_id = store.record_event(
+            session_id=session, doc_type="passport", doc_hash="h" * 8,
+            verdict="GREEN", score=0.1, coverage=0.9, signals=[],
+            model_versions={}, id_number=number,
+        )
+    finally:
+        if was is None:
+            os.environ.pop("SCREENING_POST_ID", None)
+        else:
+            os.environ["SCREENING_POST_ID"] = was
+    stamp = (datetime.utcnow() - timedelta(hours=hours_ago)).isoformat()
+    with store._tx() as c:
+        c.execute("UPDATE screening_events SET created_at = ? WHERE id = ?",
+                  (stamp, event_id))
+    return event_id
+
+
+@pytest.fixture
+def one_post(monkeypatch):
+    monkeypatch.setenv("SCREENING_POST_ID", "raxaul")
+    return Store(":memory:")
+
+
+def test_transit_is_not_applicable_on_a_standalone_post(monkeypatch):
+    """The default, and it must stay the default. One post cannot see transit,
+    and a check that fires on a re-capture trains officers to ignore it."""
+    monkeypatch.delenv("SCREENING_POST_ID", raising=False)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, Store(":memory:")))[
+        "validation.history.impossible_transit"]
+    assert s.verdict == "not_applicable"
+
+
+def test_the_same_document_at_two_distant_posts_within_the_hour(one_post):
+    # Sunauli to Raxaul is ~148 km of road. Twenty minutes is not possible.
+    _event_at(one_post, "sunauli", hours_ago=0.33)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, one_post))["validation.history.impossible_transit"]
+    assert s.verdict == "fail"
+    assert "Sunauli" in s.evidence and "Raxaul" in s.evidence
+    assert "km" in s.evidence
+
+
+def test_the_same_journey_with_enough_time_is_a_pass(one_post):
+    _event_at(one_post, "sunauli", hours_ago=12)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, one_post))["validation.history.impossible_transit"]
+    assert s.verdict == "pass"
+
+
+def test_twice_at_this_post_is_context_not_an_accusation(one_post):
+    """A re-capture and a secondary inspection both look like this."""
+    _event_at(one_post, "raxaul", hours_ago=0.1)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, one_post))["validation.history.impossible_transit"]
+    assert s.verdict == "pass"
+    assert "screened at this post" in s.evidence
+
+
+def test_a_post_outside_the_location_table_is_inconclusive(one_post):
+    _event_at(one_post, "some-new-icp", hours_ago=0.2)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, one_post))["validation.history.impossible_transit"]
+    assert s.verdict == "inconclusive"
+    assert "not in this network's location table" in s.evidence
+
+
+def test_the_distance_between_two_real_posts_is_about_right():
+    posts = load_config("posts")["posts"]
+    km = layer_f.haversine_km(posts["raxaul"], posts["sunauli"])
+    assert 120 < km < 180        # ~148 km. A wrong formula lands nowhere near.

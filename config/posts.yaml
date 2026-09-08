@@ -1,0 +1,41 @@
+# Checkpoint network, for Layer F's impossible-transit check.
+#
+# This is DEPLOYMENT CONFIGURATION, not data. A single-post installation does
+# not need it: with `SCREENING_POST_ID` unset, Layer F reports `not_applicable`
+# and never reads this file. It becomes meaningful only when more than one post
+# writes into the same audit store.
+#
+# The coordinates are the published locations of Integrated Check Posts on the
+# Indo-Nepal border, rounded to two decimals - roughly a kilometre, which is far
+# finer than a check with a 60 km/h threshold can use. They are here so the
+# distance between two posts is computed rather than typed into an N x N table
+# that has to be re-typed every time a post is added.
+#
+# `SCREENING_POST_ID` must match a key below. A post id that is not listed is
+# not an error - the check says it cannot measure the distance and reports what
+# it does know, which is that the document was seen elsewhere.
+
+posts:
+  raxaul:
+    name: Raxaul integrated check post
+    lat: 26.98
+    lon: 84.85
+  sunauli:
+    name: Sunauli integrated check post
+    lat: 27.45
+    lon: 83.45
+  jogbani:
+    name: Jogbani integrated check post
+    lat: 26.40
+    lon: 87.27
+  panitanki:
+    name: Panitanki integrated check post
+    lat: 26.70
+    lon: 88.16
+
+# The fastest a person could plausibly get from one post to another and present
+# the same document again. Deliberately generous: this is road travel through
+# the Terai, and the check must accuse nobody it does not have to. A pair of
+# crossings that beats this is not "suspicious", it is physically impossible,
+# which is the only claim worth making from a timestamp.
+max_ground_speed_kmh: 60
