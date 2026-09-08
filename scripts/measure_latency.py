@@ -90,6 +90,11 @@ def main() -> int:
 
     stages: dict[str, list[float]] = {k: [] for k in BUDGET_MS}
     totals: list[float] = []
+    # Without the field detector the total is bimodal, not noisy: a document
+    # whose MRZ reads lands near 1 s, one that falls through to Florence-2 lands
+    # against its 8 s ceiling. A p95 alone would look like an unstable machine
+    # rather than two populations, so count which path each run took.
+    vlm_runs = mrz_reads = 0
 
     print(f"\nscreening {args.runs} generated {args.doc_type} documents "
           f"({args.warmup} warmup)")
@@ -108,6 +113,13 @@ def main() -> int:
         if index < args.warmup:
             continue
         totals.append(total)
+        # `extraction.vlm.ratified` is also emitted with `not_applicable` when
+        # the fallback stands down because the MRZ was read (D45), so presence
+        # of the id is not evidence that Florence-2 ran.
+        vlm_runs += any(s.id.startswith("extraction.vlm")
+                        and s.verdict != "not_applicable" for s in ctx.signals)
+        mrz_reads += any(s.id == "extraction.ocr.mrz.confidence"
+                         and s.verdict == "pass" for s in ctx.signals)
         # Per-module time comes off the signals themselves - every module
         # stamps `latency_ms`, which is the number the budget is written in.
         by_module: dict[str, float] = {}
@@ -125,6 +137,13 @@ def main() -> int:
 
     print("\nend to end")
     report("tier 1 total", totals, TIER1_TOTAL_MS)
+
+    n = len(totals)
+    print(f"\nwhich reading path each run took ({n} runs)")
+    print(f"  MRZ read and check-digit verified   {mrz_reads:3d}  "
+          f"({mrz_reads / n * 100:.0f}%)")
+    print(f"  fell through to the Florence-2 VLM  {vlm_runs:3d}  "
+          f"({vlm_runs / n * 100:.0f}%)  <- the 8 s ceiling")
 
     p95 = percentile(totals, 0.95)
     print(f"\n  mean {statistics.mean(totals):.1f} ms over {len(totals)} runs")

@@ -234,3 +234,8 @@ reader is not deployed on this system"* rather than a bare "could not be read".
 | 2026-09-07 | Decoder failed on step 3; cause was the refreshed encoder KV cache |
 | 2026-09-07 | Loop working; passport read in 7.3 s, 20 grounded regions |
 | 2026-09-07 | Measured: dates exact, identity numbers and names misread |
+| 2026-09-08 | First end-to-end latency run. Passport p50 1,352 ms / p95 7,073 ms (n=30); aadhaar p50 6,596 / p95 7,924 (n=12); pan p50 6,006 / p95 6,355 (n=12). Over the 1,020 ms Tier 1 budget on every type. Floor for passport, ceiling for the MRZ-less types — no detector deployed |
+| 2026-09-08 | The passport total is bimodal: 28/30 read the MRZ and land near 1.3 s, 2/30 fall to Florence-2 and land against its 8 s ceiling. Aadhaar and PAN take the VLM 12/12 |
+| 2026-09-08 | Extraction stage p50 1,014 ms against a 250 ms budget, on the MRZ path alone. The cost is the untargeted read: `read_mrz` gets the bottom quarter of the page, not a crop |
+| 2026-09-08 | The ratifier's signals carry no `latency_ms`, so the per-stage extraction row understates the VLM path by three orders of magnitude. Trust the end-to-end row on aadhaar and pan |
+| 2026-09-08 | Memory measured (`scripts/measure_memory.py`): 154 MB warm and idle, 185 MB working on the MRZ path, **1,556 MB once Florence-2 loads**. DEMO.md's "under 500 MB warm" corrected |
