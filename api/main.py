@@ -399,32 +399,44 @@ class RescoreRequest(BaseModel):
     weights: dict[str, float] | None = None
 
 
-@app.post("/rescore")
-def rescore(request: RescoreRequest) -> dict:
-    """Re-score a stored event under a different operating point.
+class BatchRescoreRequest(BaseModel):
+    """One operating point, a page of events. No per-event weight override:
+    the audit screen moves the bands, and a weight override is a single-event
+    investigation rather than a page-wide one."""
+    event_ids: list[str]
+    bands: Bands
 
-    No model runs. Every input the scorer needs was written down at screening
-    time, which is the whole reason `screening_events.signals` holds the full
-    list rather than the evidence cards - cards are a view. This is what makes
-    two verdicts months apart comparable when a weight has changed in between
-    (CONTEXT.md section 3).
-    """
-    event = state["store"].event(request.event_id)
-    if event is None:
-        raise HTTPException(404, "No screening with that id was recorded.")
 
-    signals = [from_json(s) for s in event["signals"]]
-    try:
-        profile = pipeline.profile_with_weights(event["doc_type"], request.weights)
-    except ProfileError as exc:
-        raise HTTPException(400, str(exc))
+#: The audit screen re-scores whatever it has listed - 25 rows today. 200 is
+#: well clear of any page it would ask for and still a bound, which is what an
+#: input at a trust boundary needs.
+MAX_BATCH = 200
 
+
+def _resolve_bands(bands: Bands | None) -> dict:
+    """The operating point, defaulted from config and checked for sanity."""
     cfg = load_config("bands")
-    bands = (request.bands.model_dump() if request.bands else
-             {**cfg["bands"], "coverage_floor": cfg["coverage_floor"]})
-    if bands["green_below"] > bands["amber_below"]:
+    out = (bands.model_dump() if bands else
+           {**cfg["bands"], "coverage_floor": cfg["coverage_floor"]})
+    if out["green_below"] > out["amber_below"]:
         raise HTTPException(400, "The clear threshold cannot sit above the "
                                  "secondary-inspection threshold.")
+    return out
+
+
+def _rescore_event(event: dict, bands: dict,
+                   weights: dict[str, float] | None = None) -> dict:
+    """One stored event under one operating point.
+
+    The single scoring path both endpoints go through. A batch endpoint with
+    its own copy of this would be a second scorer, and two scorers that drift
+    apart is exactly the failure re-scoring exists to rule out.
+    """
+    signals = [from_json(s) for s in event["signals"]]
+    try:
+        profile = pipeline.profile_with_weights(event["doc_type"], weights)
+    except ProfileError as exc:
+        raise HTTPException(400, str(exc))
 
     verdict = pipeline.rescore(signals, profile, bands,
                                signed_fields=_proven_fields(signals))
@@ -438,8 +450,53 @@ def rescore(request: RescoreRequest) -> dict:
                      "reason": verdict.reason},
         "changed": verdict.band != event["verdict"],
         "bands": bands,
-        "weights_overridden": sorted(request.weights or {}),
+        "weights_overridden": sorted(weights or {}),
     }
+
+
+@app.post("/rescore")
+def rescore(request: RescoreRequest) -> dict:
+    """Re-score a stored event under a different operating point.
+
+    No model runs. Every input the scorer needs was written down at screening
+    time, which is the whole reason `screening_events.signals` holds the full
+    list rather than the evidence cards - cards are a view. This is what makes
+    two verdicts months apart comparable when a weight has changed in between
+    (CONTEXT.md section 3).
+    """
+    event = state["store"].event(request.event_id)
+    if event is None:
+        raise HTTPException(404, "No screening with that id was recorded.")
+    return _rescore_event(event, _resolve_bands(request.bands), request.weights)
+
+
+@app.post("/rescore/batch")
+def rescore_batch(request: BatchRescoreRequest) -> dict:
+    """A whole page of the audit table under one operating point.
+
+    Same scorer, same response objects, one round trip instead of N. The
+    results array may be **shorter than `event_ids`**: an id that names nothing
+    recorded, or an event whose profile no longer loads, is omitted rather than
+    failing the page. One bad row in a hundred must not blank the screen, and
+    every returned entry carries its own `event_id`, so the console matches on
+    that rather than on position.
+    """
+    if len(request.event_ids) > MAX_BATCH:
+        raise HTTPException(400, f"{len(request.event_ids)} events asked for in "
+                                 f"one request; the limit is {MAX_BATCH}. "
+                                 f"Re-score a page at a time.")
+    bands = _resolve_bands(request.bands)
+    store = state["store"]
+    results = []
+    for event_id in request.event_ids:
+        event = store.event(event_id)
+        if event is None:
+            continue
+        try:
+            results.append(_rescore_event(event, bands))
+        except HTTPException:
+            continue
+    return {"results": results}
 
 
 def _proven_fields(signals) -> set[str]:

@@ -200,6 +200,60 @@ def test_inverted_bands_are_rejected_rather_than_silently_reordered(client):
     assert response.status_code == 400
 
 
+# ------------------------------------------------------- the batch endpoint
+
+BATCH_BANDS = {"green_below": 0.2, "amber_below": 0.6, "coverage_floor": 0.7}
+
+
+def test_a_batch_returns_what_n_single_rescores_would_have(client):
+    """The whole point of the endpoint: one round trip, identical answers.
+
+    If this ever diverges there are two scorers, which is the failure the
+    endpoint exists to avoid.
+    """
+    ids = [record(client, [sig("validation.signature.valid")], session=f"b{n}")
+           for n in range(3)]
+
+    batch = client.post("/rescore/batch",
+                        json={"event_ids": ids, "bands": BATCH_BANDS}).json()
+    singles = [client.post("/rescore", json={"event_id": i,
+                                             "bands": BATCH_BANDS}).json()
+               for i in ids]
+
+    assert [r["event_id"] for r in batch["results"]] == ids
+    assert batch["results"] == singles
+
+
+def test_one_unknown_id_does_not_blank_the_page(client):
+    """A stale row in the console must cost that row, not the screen."""
+    good = record(client, [sig("validation.signature.valid")])
+    body = client.post("/rescore/batch", json={
+        "event_ids": ["no-such-event", good, "also-missing"],
+        "bands": BATCH_BANDS}).json()
+
+    assert [r["event_id"] for r in body["results"]] == [good]
+
+
+def test_a_batch_past_the_cap_is_refused(client):
+    from api.main import MAX_BATCH
+
+    response = client.post("/rescore/batch", json={
+        "event_ids": [f"e{n}" for n in range(MAX_BATCH + 1)],
+        "bands": BATCH_BANDS})
+    assert response.status_code == 400
+    assert str(MAX_BATCH) in response.json()["detail"]
+
+
+def test_inverted_bands_fail_the_whole_batch_rather_than_every_row(client):
+    """Bands are checked once, before any event is read. An operating point
+    that makes no sense is a bad request, not 25 quietly dropped rows."""
+    record(client, [sig("validation.signature.valid")])
+    response = client.post("/rescore/batch", json={
+        "event_ids": [], "bands": {"green_below": 0.8, "amber_below": 0.2,
+                                   "coverage_floor": 0.5}})
+    assert response.status_code == 400
+
+
 # ------------------------------------------------------------------ /events
 
 def test_events_lists_newest_first_and_pages(client):

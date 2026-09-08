@@ -159,6 +159,14 @@ export interface RescoreResult {
   changed: boolean;
 }
 
+/** The operating point a re-score is run under. Band edges from the settings
+ *  store, sent as the server names them. */
+export interface RescoreBands {
+  green_below: number;
+  amber_below: number;
+  coverage_floor: number;
+}
+
 /**
  * Re-score one stored event under a different operating point.
  *
@@ -169,7 +177,7 @@ export interface RescoreResult {
  */
 export async function rescoreEvent(
   eventId: string,
-  bands: { green_below: number; amber_below: number; coverage_floor: number },
+  bands: RescoreBands,
 ): Promise<RescoreResult> {
   const response = await fetch(`${API}/rescore`, {
     method: "POST",
@@ -181,6 +189,38 @@ export async function rescoreEvent(
     throw new Error(detail.detail ?? "That screening could not be re-scored");
   }
   return response.json();
+}
+
+/**
+ * Re-score a whole page of stored events under one operating point, in one
+ * request. Same server, same scorer, same result shape as `rescoreEvent` — the
+ * only difference is that the audit table asks once instead of once per row.
+ *
+ * Two things about the response the caller must respect:
+ *
+ *  - `results` may be SHORTER than `ids`. An event the server could not
+ *    re-score is omitted rather than failing the batch, so results are keyed by
+ *    their own `event_id` and never by array position. Keying by position is
+ *    how one unreadable event would silently relabel every row beneath it.
+ *  - There is a cap on how many ids one request may carry. Over it the server
+ *    answers 400 with a `detail` sentence, surfaced here the same way
+ *    `rescoreEvent` surfaces one.
+ */
+export async function rescoreEvents(
+  ids: string[],
+  bands: RescoreBands,
+): Promise<RescoreResult[]> {
+  const response = await fetch(`${API}/rescore/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_ids: ids, bands }),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(detail.detail ?? "These screenings could not be re-scored");
+  }
+  const page = (await response.json()) as { results: RescoreResult[] };
+  return page.results;
 }
 
 // -------------------------------------------------------------- sessions

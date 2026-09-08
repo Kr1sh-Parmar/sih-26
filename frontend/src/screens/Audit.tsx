@@ -21,7 +21,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Band } from "../contracts";
 import {
   fetchEvents,
-  rescoreEvent,
+  rescoreEvents,
   type AuditEvent,
   type RescoreResult,
 } from "../transport/socket";
@@ -121,10 +121,17 @@ export function Audit() {
   }, [mode, fallback]);
 
   // Re-score the listed page whenever the operating point moves. One request
-  // per event, which is honest rather than clever: the server is the only
-  // thing allowed to produce a verdict.
-  // ponytail: N requests for N rows against a localhost process. Batch them
-  // into one POST if this ever pages past a few dozen events.
+  // for the whole page - the server is still the only thing allowed to produce
+  // a verdict, and asking it once instead of once per row does not change that.
+  //
+  // Results are keyed by their own `event_id`, never by array position. The
+  // batch is allowed to come back shorter than it was asked for: an event the
+  // server could not re-score is omitted rather than failing the page, and
+  // matching on position is how one omitted row would silently relabel every
+  // row beneath it.
+  //
+  // Debounced, because those three numbers are on sliders. A drag would
+  // otherwise fire one request per animation frame.
   useEffect(() => {
     if (mode !== "live" || !events?.length) return;
     let alive = true;
@@ -133,18 +140,24 @@ export function Audit() {
       amber_below: redAt,
       coverage_floor: coverageFloor,
     };
-    Promise.all(
-      events.map((e) =>
-        rescoreEvent(e.id, bands).catch(() => null),
-      ),
-    ).then((results) => {
-      if (!alive) return;
-      const next: Record<string, RescoreResult> = {};
-      for (const r of results) if (r) next[r.event_id] = r;
-      setRescored(next);
-    });
+    const ids = events.map((e) => e.id);
+    const timer = setTimeout(() => {
+      rescoreEvents(ids, bands)
+        .then((results) => {
+          if (!alive) return;
+          const next: Record<string, RescoreResult> = {};
+          for (const r of results) next[r.event_id] = r;
+          setRescored(next);
+        })
+        .catch(() => {
+          // The table still shows the recorded verdict, which is the one that
+          // was actually acted on at the counter. A failed re-score must leave
+          // that standing rather than blank the page.
+        });
+    }, 150);
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
   }, [mode, events, amberAt, redAt, coverageFloor]);
 
