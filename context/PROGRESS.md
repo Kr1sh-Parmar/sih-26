@@ -60,6 +60,30 @@ frontend verify      4/4 gates, 34 tests     (baseline 31)
   of magnitude on exactly the documents that blow the budget.
 - **Devanagari deployed** — see above.
 
+### The fusion audit — a fourth bug, and the worst of them
+
+Nothing had audited fusion this session, and the VIZ/MRZ bug suggested where
+to look: evidence that is not independent of what it claims to corroborate.
+
+**A signed card could disagree with its own signature and pass.** Layer D
+compared a signed document against the *other* documents in a session and never
+against the card carrying the signature. Measured with a genuinely verified
+Ed25519 signature: payload DOB 1960-03-24, printed DOB 1988-11-02, **zero
+failing signals**.
+
+And `apply_crypto_precedence` then suppressed the backup evidence too — it was
+fed every field in the payload, so `tamper.physical.font_consistency`, the
+check that exists to catch reprinting, was dropped as noise on exactly the
+document it was built for.
+
+Fixed by `validation.signed.<field>_mismatch` (hard-fail, all six profiles) and
+by `confirmed_fields()` — a field earns suppression by being corroborated, not
+by appearing in a payload. D48.
+
+```
+python -m pytest     374 passed, 7 skipped
+```
+
 ### Known-open, and deliberately so
 
 - **Latency misses budget on every document type.** Expected to improve when the detector replaces the VLM fallback on MRZ-less documents, but it is not measured and must not be claimed.
