@@ -569,3 +569,50 @@ def test_a_missing_country_table_is_inconclusive_not_a_failed_document(monkeypat
     s = by_id(layer_b.run(ctx))["validation.format.passport.nationality"]
     assert s.verdict == "inconclusive"
     assert "not installed" in s.evidence
+
+
+# ------------------------------- the signed payload is not a printed value
+
+
+def test_a_qr_sourced_field_cannot_pass_the_viz_mrz_check():
+    """The forgery this lets through if it is wrong.
+
+    With no field detector nothing printed is read, and `seed_from_payload`
+    fills ctx.fields from the verified QR. Those values then looked like
+    printed values to the VIZ/MRZ check, so all six comparisons passed with
+    evidence reading "matches printed" - naming a value that was never printed
+    anywhere. The issuer generates the payload and the MRZ together from one
+    record, so the comparison was two halves of one artefact agreeing with
+    itself.
+
+    Measured consequence before the fix: a generated passport scored GREEN at
+    coverage 0.752, and so did the same passport with its entire printed band
+    wiped and retyped. Afterwards both are AMBER at 0.496 - the system cannot
+    read the document, so it declines to clear it (D9).
+
+    This does not mean the retype is *detected*. It means it is not cleared.
+    Detection comes back when the detector lands and there is real ink to
+    compare.
+    """
+    ctx = passport_ctx(dob=field("1991-08-04", source="qr"),
+                       mrz_dob="1991-08-04")
+    s = by_id(layer_c.run(ctx))["validation.vizmrz.dob_mismatch"]
+    assert s.verdict == "inconclusive", (
+        "a value from the signed payload was treated as printed ink"
+    )
+    assert "signed payload" in s.evidence
+
+
+def test_an_ocr_read_field_still_passes_the_viz_mrz_check():
+    """The fix must not break the check it is protecting."""
+    ctx = passport_ctx(dob=field("1991-08-04", source="ocr"),
+                       mrz_dob="1991-08-04")
+    assert by_id(layer_c.run(ctx))["validation.vizmrz.dob_mismatch"].verdict == "pass"
+
+
+def test_an_ocr_read_field_that_disagrees_still_fails():
+    ctx = passport_ctx(dob=field("1998-11-02", source="ocr"),
+                       mrz_dob="1991-08-04")
+    s = by_id(layer_c.run(ctx))["validation.vizmrz.dob_mismatch"]
+    assert s.verdict == "fail"
+    assert "1998-11-02" in s.evidence and "1991-08-04" in s.evidence

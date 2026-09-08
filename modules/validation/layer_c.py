@@ -17,7 +17,7 @@ from fusion.signal import Signal
 from modules.extraction import mrz as MRZ
 from modules.extraction import normalize as N
 from modules.validation import (anchor_for, box_of, comparable, emit,
-                                raw_of, value_of)
+                                is_printed, raw_of, value_of)
 
 #: Standard Indian validity periods, in years. Used as a soft check: a passport
 #: whose expiry is not issue+10 or issue+5 is unusual, not impossible.
@@ -187,6 +187,22 @@ def viz_mrz(ctx: ScreeningContext) -> list[Signal]:
             out.append(emit(profile, sid, "inconclusive",
                             f"The printed {shown} could not be read, so it cannot "
                             f"be compared with the machine-readable zone",
+                            confidence=0.0, anchor=anchor_for(field), region=box,
+                            started=started))
+            continue
+
+        if not is_printed(ctx, field):
+            # The value is here, but it came out of the signed QR payload, not
+            # off the card. Comparing it with the MRZ compares two things the
+            # issuer generated together and tells the officer nothing about the
+            # ink in front of them - so it is not a pass, and it costs coverage
+            # exactly like any other field that could not be read.
+            out.append(emit(profile, sid, "inconclusive",
+                            f"The printed {shown} could not be read, so it "
+                            f"cannot be compared with the machine-readable "
+                            f"zone. The {shown} shown comes from the signed "
+                            f"payload, which is not evidence about what is "
+                            f"printed on this document.",
                             confidence=0.0, anchor=anchor_for(field), region=box,
                             started=started))
             continue

@@ -51,6 +51,25 @@ def emit(profile: dict, sid: str, verdict: str, evidence: str, *,
 #: genuinely was not established (D9).
 COMPARABLE_SOURCES = frozenset({"ocr", "mrz", "qr"})
 
+#: Sources that are actually *ink on the document*. The signed QR payload is
+#: not one of them, and the distinction is the whole VIZ/MRZ premise.
+#:
+#: The VIZ/MRZ check exists to catch a forger who alters the printed date and
+#: leaves the machine-readable zone alone. Both of those live on the card. The
+#: signed payload does not - it is what the issuer put in the QR, and the
+#: issuer generated it and the MRZ together from one record. Comparing them
+#: proves they agree with each other and says nothing whatever about the print.
+#:
+#: Treating `qr` as a printed value made every VIZ/MRZ check pass on a passport
+#: whose printed fields were never read, with the evidence string "matches
+#: printed" naming a value that was never printed anywhere. A document with the
+#: entire printed band wiped and retyped scored GREEN.
+#: `vlm` belongs here: the fallback reader reads ink off the page, so its
+#: output IS a printed value - just an unreliable one, which is what
+#: COMPARABLE_SOURCES separately keeps out of a dispute. `qr` is the only
+#: source that never touched the document.
+PRINTED_SOURCES = frozenset({"ocr", "mrz", "vlm"})
+
 
 def source_of(ctx: ScreeningContext, field: str) -> str | None:
     f = ctx.fields.get(field)
@@ -61,6 +80,17 @@ def comparable(ctx: ScreeningContext, field: str) -> bool:
     """True when this field was read well enough to dispute a proven value."""
     f = ctx.fields.get(field)
     return bool(f and f.value and f.source in COMPARABLE_SOURCES)
+
+
+def is_printed(ctx: ScreeningContext, field: str) -> bool:
+    """True when this value was read off the document rather than out of a QR.
+
+    Only the VIZ/MRZ check needs this. Layer D deliberately compares a signed
+    payload against another document's value - that is trust propagation and
+    the whole point of it is that the payload is not on this card.
+    """
+    f = ctx.fields.get(field)
+    return bool(f and f.value and f.source in PRINTED_SOURCES)
 
 
 def value_of(ctx: ScreeningContext, field: str) -> str | None:
