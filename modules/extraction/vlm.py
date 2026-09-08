@@ -407,7 +407,10 @@ def run(ctx: ScreeningContext, *, reason: str = "nothing was located") -> list[S
     # was read here as well would emit the same id twice, which
     # tests/test_signal_identity.py forbids and which would charge coverage
     # twice for one condition (D8).
-    return ratifier.ratify(ctx, fields,
+    # `started` is this function's clock, not the ratifier's. Every failure
+    # path above already reports the whole fallback; the success path - the
+    # only one that actually spends the seven seconds - was losing it.
+    return ratifier.ratify(ctx, fields, started=started,
                            confidence=float(cfg.get("confidence", 0.5)))
 
 

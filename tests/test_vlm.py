@@ -258,3 +258,46 @@ def test_the_fallback_still_runs_when_the_mrz_did_not_read():
     assert "mrz" not in ctx.fields
     ids = {s.id for s in extraction._fallback(ctx, [])}
     assert ids, "nothing was read and the fallback declined to run"
+
+
+def test_the_ratified_signal_reports_the_whole_fallback_not_just_the_ratifying():
+    """The measurement bug this pins.
+
+    The ratifier is the only producer of `extraction.vlm.*`, so its signals are
+    the only place the fallback's cost can be reported. It used to start its own
+    clock, which timed the ratification - a few hundred microseconds - and threw
+    away the seconds of Florence-2 that produced the reads.
+
+    Measured on `var/demo/gen_pan.png`, which spends its whole screening in the
+    fallback: extraction reported **4 ms** of a ~6,000 ms document. Every
+    per-stage latency table built from signal latencies was wrong by three
+    orders of magnitude on exactly the documents that blow the budget.
+
+    CLAUDE.md asks for the latency budget to be a requirement rather than a
+    hope. A budget policed by a number that omits the expensive part polices
+    nothing.
+    """
+    from modules.extraction import ratify as ratifier
+
+    ctx = ScreeningContext(session_id="t", image=np.zeros((80, 200, 3), np.uint8),
+                           doc_type="pan", profile=load_profile("pan"))
+
+    # Pretend the model spent 250 ms before handing reads to the ratifier.
+    started = time.perf_counter() - 0.250
+    signals = ratifier.ratify(ctx, {"dob": "02/11/1998"}, started=started)
+
+    reported = max(s.latency_ms for s in signals)
+    assert reported >= 250, (
+        f"the fallback's cost was dropped: reported {reported} ms for work that "
+        f"began 250 ms ago"
+    )
+
+
+def test_ratify_still_times_itself_when_no_clock_is_handed_in():
+    """The default has to keep working - most callers do not pass one."""
+    from modules.extraction import ratify as ratifier
+
+    ctx = ScreeningContext(session_id="t", image=np.zeros((80, 200, 3), np.uint8),
+                           doc_type="pan", profile=load_profile("pan"))
+    signals = ratifier.ratify(ctx, {"dob": "02/11/1998"})
+    assert all(s.latency_ms >= 0 for s in signals)

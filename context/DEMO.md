@@ -265,10 +265,13 @@ with that number rather than after it:
 3. **The face number is meaningless as printed.** There was no live frame, so
    `face.live.detected` and `face.match.cosine` returned `inconclusive` without
    running a model. The 320 ms face budget is untested.
-4. **The per-stage extraction row understates the VLM path.** The ratifier's
-   signals carry no `latency_ms`, so on Aadhaar and PAN the stage table reports
-   single-digit milliseconds while the end-to-end total says 6 s. Trust the
-   end-to-end row on those two.
+4. ~~**The per-stage extraction row understates the VLM path.**~~ **Fixed.**
+   The ratifier starts the clock the caller hands it rather than one of its
+   own, so `extraction.vlm.ratified` now reports the whole fallback. On
+   `gen_pan.png` the extraction stage went from **4 ms to 6,051 ms**, which
+   agrees with the end-to-end row instead of contradicting it by three orders
+   of magnitude. Every per-stage table above the VLM path was previously wrong
+   on exactly the documents that blow the budget.
 
 ## Memory — measured, and the 500 MB claim does not survive
 

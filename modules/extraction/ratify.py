@@ -98,16 +98,27 @@ def _check_mrz(strip: str) -> tuple[bool, str]:
 
 
 def ratify(ctx: ScreeningContext, reads: dict[str, str], *,
-           confidence: float = 0.5) -> list[Signal]:
+           confidence: float = 0.5, started: float | None = None) -> list[Signal]:
     """Gate a set of VLM reads into `ctx.fields`. Returns signals.
 
     `reads` is {ontology class: raw string} straight from the model. Values are
     normalised through the same functions OCR uses, so a date that is not a date
     is discarded here exactly as it would be there.
+
+    `started` is the caller's clock, and passing it matters more than it looks.
+    The ratifier is the only producer of `extraction.vlm.*`, so its signals are
+    the only place the fallback's cost can be reported. Timing from here instead
+    measures the ratification - a few hundred microseconds - and throws away the
+    seven seconds of Florence-2 that produced the reads. That is how a document
+    which took six seconds to screen reported four milliseconds of extraction.
+
+    CLAUDE.md: time everything, the latency budget is a requirement rather than
+    a hope. A budget policed by a number that omits the expensive part is not
+    policing anything.
     """
     from modules.extraction import normalise_field
 
-    started = time.perf_counter()
+    started = time.perf_counter() if started is None else started
     doc_type = ctx.profile["doc_type"]
     pair = anchor_for(doc_type)
     signals: list[Signal] = []
