@@ -153,6 +153,8 @@ def callout(title, body, fill="FDF6E3", edge=SECOND):
     p2.paragraph_format.space_after = Pt(2)
     doc.add_paragraph().paragraph_format.space_after = Pt(4)
 
+EM = "—"; MID = "·"; ARR = "→"; NE = "≠"; SEC = "§"
+
 print("scaffold ready")
 
 # ============================================================== COVER
@@ -246,6 +248,14 @@ para("The order of the verdict logic is fixed and is not negotiable: a hard fail
      "two of these produces a system that clears documents it should not.")
 figure("fig3_flowchart.png",
        "Figure 3 - Decision flow. The order is fixed: hard fail, then coverage, then score.", width=5.5)
+
+h2("After the coverage floor")
+para("Figure 3 stops at the coverage check because everything past it is a different "
+     "kind of work: no more reading, only deciding what the collected signals mean "
+     "together. This is that half.")
+figure("fig9_after_coverage.png",
+       "Figure 3b " + EM + " The risk gate, Tier 2, and the four steps of fusion.",
+       width=6.4)
 
 h2("The three trust classes")
 figure("fig4_trust_classes.png",
@@ -388,6 +398,13 @@ para("Nine stages. Each one has exactly one job and exactly one kind of output. 
 figure("fig7_pipeline.png",
        "Figure 7 " + EM + " Technical pipeline. Each stage's only output is a list of Signals.",
        width=6.6)
+
+h2("Which model sees what")
+para("Every model in the screening path, what it is fed, what it hands back, and which "
+     "signal carries the result. Two of the ten steps use no model at all.")
+figure("fig10_model_io.png",
+       "Figure 7b " + EM + " Model inputs, outputs, and the signal each result becomes.",
+       width=6.9)
 
 h2("Stage by stage")
 
