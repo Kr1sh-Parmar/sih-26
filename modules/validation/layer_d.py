@@ -24,7 +24,7 @@ from fusion.context import ScreeningContext
 from fusion.signal import Signal
 from modules.extraction import normalize as N
 from modules.validation import (anchor_for, box_of, comparable, emit,
-                                source_of, value_of)
+                                is_printed, source_of, value_of)
 
 #: How to compare each propagated field. Same normalisers as the VIZ/MRZ check,
 #: so the two layers cannot disagree about what "equal" means.
@@ -50,7 +50,108 @@ def signed_priors(ctx: ScreeningContext) -> list[dict]:
     ]
 
 
-def run(ctx: ScreeningContext) -> list[Signal]:
+def run(ctx: ScreeningContext, *, anchors=None) -> list[Signal]:
+    return _own_signature(ctx, anchors) + _cross_document(ctx)
+
+
+def _own_signature(ctx: ScreeningContext, anchors) -> list[Signal]:
+    """The printed fields against THIS document's own verified payload.
+
+    The hole this closes. Layer D compared a signed document against the *other*
+    documents in the session and never against the card carrying the signature,
+    so a genuine signed Aadhaar with its printed date of birth altered - the QR
+    left alone, so the signature still verifies - produced no failing signal at
+    all. Measured: printed 1988-11-02 against a signed payload of 1960-03-24,
+    zero failures.
+
+    A signature proves the payload. It says nothing about the ink until someone
+    compares the two, and until this ran, nobody did.
+
+    Stronger evidence than the cross-document form and weighted accordingly:
+    there is one physical card here, and the signature travels on it.
+    """
+    from modules.validation import layer_a
+
+    started = time.perf_counter()
+    fields = ctx.profile["verify"].get("cross_document") or []
+    if not fields:
+        return []
+
+    verification = layer_a.verified_payload(ctx, anchors)
+    if not verification or not verification.ok or not verification.payload:
+        return []
+
+    payload = verification.payload
+    out: list[Signal] = []
+    for field in fields:
+        if field not in COMPARE:
+            continue
+        proven = payload.get(field)
+        if not proven:
+            continue
+
+        sid = f"validation.signed.{field}_mismatch"
+        shown = field_label(field)
+        box = box_of(ctx, field)
+        printed = value_of(ctx, field)
+
+        if not printed:
+            out.append(emit(
+                ctx.profile, sid, "inconclusive",
+                f"The printed {shown} could not be read, so it could not be "
+                f"checked against this document's own signature",
+                trust="cryptographic", confidence=0.0,
+                anchor=anchor_for(field), region=box, started=started))
+            continue
+
+        if not is_printed(ctx, field):
+            # The value came out of the very payload we would be checking it
+            # against. Comparing a signature with itself always agrees and
+            # proves nothing - the same mistake the VIZ/MRZ check made.
+            out.append(emit(
+                ctx.profile, sid, "inconclusive",
+                f"The {shown} shown was taken from the signed payload itself, "
+                f"not read off the card, so it cannot corroborate that payload",
+                trust="cryptographic", confidence=0.0,
+                anchor=anchor_for(field), region=box, started=started))
+            continue
+
+        if not comparable(ctx, field):
+            out.append(emit(
+                ctx.profile, sid, "inconclusive",
+                f"The {shown} was only recovered by the fallback reader, which "
+                f"cannot be relied on to the character, so it is not used to "
+                f"dispute this document's signature",
+                trust="cryptographic", confidence=0.0,
+                anchor=anchor_for(field), region=box, started=started))
+            continue
+
+        norm = COMPARE[field]
+        a, b = norm(proven), norm(printed)
+        if a is None or b is None:
+            out.append(emit(
+                ctx.profile, sid, "inconclusive",
+                f"The {shown} could not be normalised for comparison against "
+                f"this document's signature",
+                trust="cryptographic", confidence=0.0,
+                anchor=anchor_for(field), region=box, started=started))
+            continue
+
+        match = a == b
+        out.append(emit(
+            ctx.profile, sid, "pass" if match else "fail",
+            f"The {shown} printed on this document, {b}, matches what its own "
+            f"signature covers"
+            if match else
+            f"This document's own signature covers {shown} {a}, but the card "
+            f"prints {b}. The signature verifies, so the payload is genuine - "
+            f"it is the printing that disagrees with it",
+            trust="cryptographic",
+            anchor=anchor_for(field), region=box, started=started))
+    return out
+
+
+def _cross_document(ctx: ScreeningContext) -> list[Signal]:
     started = time.perf_counter()
     priors = signed_priors(ctx)
     fields = ctx.profile["verify"].get("cross_document") or []

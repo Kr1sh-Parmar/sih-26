@@ -645,3 +645,34 @@ The floor sits at a 0.84 character ratio: "Prodeep Ghorat" against "Pradeep Ghar
 **A post outside the table is `inconclusive`, not ignored.** The distance is unmeasurable and inventing one would be worse than saying so — but the officer is still told the document was presented somewhere else.
 
 **The migration is additive and has to stay that way.** `screening_events` is the audit log; a verdict in it may be challenged months later (CONTEXT.md §3), so a migration that rewrites or drops a row destroys what the table is for. `ALTER TABLE ADD COLUMN` leaves the 13 existing events reading `post_id` NULL, which is the truthful answer for a machine that was not part of a network when it screened them.
+
+---
+
+## D48 — A signature proves the payload, not the printing
+
+**Decision:** Layer D gained a within-document check — every printed field against **this** card's own verified payload — and `apply_crypto_precedence` now suppresses only fields where that comparison actually passed.
+
+**The hole.** Layer D compared a signed document against the *other* documents in the session and never against the card carrying the signature. Nothing, anywhere, compared a document's printing with its own payload. Measured on `var/demo/gen_aadhaar.png` with a genuinely verified Ed25519 signature:
+
+```
+signature verified : True
+payload dob        : 1960-03-24
+printed dob        : 1988-11-02
+failing signals    : NONE
+```
+
+A genuine signed card with its printed date of birth altered — QR untouched, so the signature still verifies — passed with no failing signal at all.
+
+**The second half, which made it worse.** `apply_crypto_precedence` drops probabilistic findings anchored on signed fields, on the reasoning that an ELA hotspot over a cryptographically signed date of birth is noise. It was fed `signed_fields(payload)` — every non-empty field in the payload. So the same altered card had its `tamper.physical.font_consistency` finding suppressed as well, and that check exists precisely to catch reprinting. The arithmetic evidence did not exist and the probabilistic evidence was thrown away.
+
+**Why both are the same mistake.** It is D-for-D the VIZ/MRZ error: treating a signature over a payload as evidence about ink. A signature proves the payload is authentic. It says nothing about what is printed on the card until somebody compares the two.
+
+**The rule now:** a field earns suppression by being *corroborated* — read off the card and found to agree with a signature. `confirmed_fields()` computes that from the signals, so screening time and re-score time cannot drift apart, which the old `_proven_fields` approximation could. Absent corroboration the probabilistic evidence is the only evidence about the ink, and it survives.
+
+**Guards carried over from the cross-document half rather than reinvented:**
+
+- a value from `qr` cannot corroborate the payload it came from — comparing a signature with itself always agrees;
+- a `vlm` read may not condemn a card, because a one-character misread would be a hard fail on a genuine document (D37);
+- an unverified signature vouches for nothing.
+
+**Weighted 0.95 in `reliability.yaml` and hard-fail on all six profiles** — stronger than the cross-document form, because there is one physical card here and the signature travels on it. It resolves to the same 0.10 profile weight as `crossdoc`, so coverage treats the two consistently.

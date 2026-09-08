@@ -44,6 +44,11 @@ validation.vizmrz.nationality_mismatch:  0.85
 
 # Cross-document: same reasoning, but one side is cryptographically proven.
 validation.crossdoc.dob_mismatch:        0.90
+# The printed value against THIS document's own signature. Stronger than the
+# cross-document form: one physical card, and the signature travels on it.
+validation.signed.name_mismatch:         0.95
+validation.signed.dob_mismatch:          0.95
+validation.signed.gender_mismatch:       0.95
 validation.crossdoc.name_mismatch:       0.90
 
 validation.history.impossible_transit:   0.40   # needs deployment history to mean anything

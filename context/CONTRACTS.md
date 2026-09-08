@@ -55,6 +55,7 @@ validation.mrz.checkdigit.<field>    validation.mrz.checkdigit.composite
 validation.verhoeff.aadhaar          validation.format.<doctype>.<field>
 validation.crossfield.date_order     validation.crossfield.validity_period
 validation.crossdoc.name_mismatch    validation.crossdoc.dob_mismatch
+validation.signed.<field>_mismatch
 validation.vizmrz.<field>_mismatch   validation.expiry.expired
 validation.watchlist.hit             validation.history.impossible_transit
 

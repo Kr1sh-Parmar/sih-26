@@ -8,7 +8,9 @@ import pytest
 
 from core.profiles import load_profile
 from fusion.findings import build_findings, group_severity, resolve_anchor
-from fusion.score import coverage, score
+from fusion.finding import Finding
+from fusion.score import (apply_crypto_precedence, confirmed_fields,
+                          coverage, score)
 from fusion.signal import Signal, from_json
 
 
@@ -177,3 +179,66 @@ def test_crossdoc_red_is_cryptographically_backed(fixtures):
     assert v.band == "RED"
     assert culprit.trust_class == "cryptographic"
     assert v.reason == culprit.evidence
+
+
+# ------------------------- what a signature is allowed to suppress, and when
+
+
+def test_a_signature_only_suppresses_a_field_it_was_checked_against():
+    """The suppression that hid the evidence for a retyped card.
+
+    `apply_crypto_precedence` drops probabilistic findings on signed fields:
+    an ELA hotspot over a signed date of birth is recompression noise. The old
+    rule fed it *every field the payload mentions*, which is the same mistake
+    the VIZ/MRZ check made - a signature proves the payload, and says nothing
+    about the ink until somebody compares the two.
+
+    So a genuine signed card with its printed DOB altered had its
+    `tamper.physical.font_consistency` finding - the check that exists to catch
+    reprinting - suppressed as noise, because `field:dob` was in the payload.
+    """
+    tamper = Finding(anchor="field:dob", trust_class="probabilistic", severity=0.9,
+                     headline="Character heights vary across the date of birth",
+                     supporting=[sig("tamper.physical.font_consistency", "fail",
+                                     module="tamper", trust="probabilistic",
+                                     anchor="field:dob")])
+    clean_sig = Finding(anchor="document", trust_class="cryptographic", severity=0.0,
+                        headline="Signature verifies",
+                        supporting=[sig("validation.signature.valid", "pass",
+                                        trust="cryptographic")])
+    findings = [clean_sig, tamper]
+
+    # A verifying signature, but nothing compared the print against it.
+    nothing_checked = confirmed_fields([
+        sig("validation.signature.valid", "pass", trust="cryptographic"),
+    ])
+    assert nothing_checked == set()
+    assert tamper in apply_crypto_precedence(findings, nothing_checked), (
+        "tamper evidence over an unconfirmed field was suppressed"
+    )
+
+    # Print read and found to agree: now the hotspot really is noise.
+    checked = confirmed_fields([
+        sig("validation.signed.dob_mismatch", "pass", trust="cryptographic",
+            anchor="field:dob"),
+    ])
+    assert checked == {"field:dob"}
+    assert tamper not in apply_crypto_precedence(findings, checked)
+
+
+def test_a_failing_comparison_confirms_nothing():
+    """Only a *passing* check corroborates. A mismatch is the opposite."""
+    assert confirmed_fields([
+        sig("validation.signed.dob_mismatch", "fail", trust="cryptographic",
+            anchor="field:dob"),
+        sig("validation.crossdoc.name_mismatch", "inconclusive",
+            trust="cryptographic", anchor="field:name"),
+    ]) == set()
+
+
+def test_the_cross_document_check_also_corroborates():
+    """Scene 3's path: a signed Aadhaar vouching for a PAN's printed DOB."""
+    assert confirmed_fields([
+        sig("validation.crossdoc.dob_mismatch", "pass", trust="cryptographic",
+            anchor="field:dob"),
+    ]) == {"field:dob"}

@@ -31,7 +31,7 @@ from core.profiles import DOC_TYPES, ProfileError, load_config, load_profile
 from core.store import DEFAULT_DB, Store
 from fusion.evidence import cards
 from fusion.findings import build_findings
-from fusion.score import score
+from fusion.score import confirmed_fields, score
 from fusion.signal import from_json
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -500,19 +500,15 @@ def rescore_batch(request: BatchRescoreRequest) -> dict:
 
 
 def _proven_fields(signals) -> set[str]:
-    """Which field anchors a signature vouched for, read back off the record.
+    """Fields where a signature was actually checked against the printing.
 
-    An approximation, and worth naming as one. At screening time this is
-    `core.canonical.signed_fields(payload)` - every non-empty field in the
-    verified payload. The payload is the traveller's name and date of birth and
-    is deliberately never stored, so re-scoring reconstructs the set from the
-    cryptographic signals that survived instead. It covers every field a
-    cryptographic check actually spoke about, which is the set that matters for
-    suppression; a signed field nothing disputed is absent, and its absence
-    changes nothing, because there is no probabilistic finding there to suppress.
+    Screening time and re-score time now compute this the same way, from the
+    signals, so a historical event re-scores under exactly the rule that
+    produced it. It used to be reconstructed here as "every field a
+    cryptographic signal spoke about", which was both an approximation and too
+    generous - see fusion.score.confirmed_fields.
     """
-    return {s.anchor for s in signals
-            if s.trust_class == "cryptographic" and s.anchor.startswith("field:")}
+    return confirmed_fields(signals)
 
 
 @app.websocket("/screen/{screening_id}")

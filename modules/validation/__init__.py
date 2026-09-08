@@ -85,9 +85,13 @@ def comparable(ctx: ScreeningContext, field: str) -> bool:
 def is_printed(ctx: ScreeningContext, field: str) -> bool:
     """True when this value was read off the document rather than out of a QR.
 
-    Only the VIZ/MRZ check needs this. Layer D deliberately compares a signed
-    payload against another document's value - that is trust propagation and
-    the whole point of it is that the payload is not on this card.
+    Two callers, for the same reason. The VIZ/MRZ check compares print against
+    the machine-readable zone; the within-document signature check compares
+    print against this card's own payload. Both are claims about ink, and a
+    value lifted out of the QR cannot corroborate the QR.
+
+    Layer D's *cross-document* half deliberately does not use this: there the
+    payload belonging to a different document is the entire point.
     """
     f = ctx.fields.get(field)
     return bool(f and f.value and f.source in PRINTED_SOURCES)
@@ -123,7 +127,7 @@ def run(ctx: ScreeningContext, *, anchors=None, store=None) -> list[Signal]:
     signals += layer_a.run(ctx, anchors=anchors)
     signals += layer_b.run(ctx)
     signals += layer_c.run(ctx)
-    signals += layer_d.run(ctx)
+    signals += layer_d.run(ctx, anchors=anchors)
     if store is not None:
         signals += layer_e.run(ctx, store=store)
         signals += layer_f.run(ctx, store=store)

@@ -14,7 +14,7 @@ from typing import Iterator
 
 import numpy as np
 
-from core.canonical import doc_hash, signed_fields
+from core.canonical import doc_hash
 from core.decode import decode
 from core.profiles import load_config, load_profile
 from core.trust import TrustAnchorStore, Verification
@@ -22,7 +22,7 @@ from fusion.context import ScreeningContext
 from fusion.evidence import cards
 from fusion.findings import build_findings
 from fusion.gate import decide
-from fusion.score import Verdict, score
+from fusion.score import Verdict, confirmed_fields, score
 from fusion.signal import Signal
 from modules import extraction, face, tamper
 from modules import validation
@@ -137,7 +137,9 @@ def screen(ctx: ScreeningContext, *, anchors: TrustAnchorStore | None = None,
 
     # --- Fusion -----------------------------------------------------------
     yield Event("phase", {"phase": "fusing"})
-    proven = signed_fields(verification.payload) if verification and verification.ok else set()
+    # Fields where a signature was actually checked against the ink, not
+    # every field the payload happens to carry. See confirmed_fields().
+    proven = confirmed_fields(ctx.signals)
     findings = build_findings(ctx.signals, ctx.field_boxes)
     verdict = score(ctx.signals, ctx.profile, findings, signed_fields=proven)
 

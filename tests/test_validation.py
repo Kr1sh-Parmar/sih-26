@@ -616,3 +616,73 @@ def test_an_ocr_read_field_that_disagrees_still_fails():
     s = by_id(layer_c.run(ctx))["validation.vizmrz.dob_mismatch"]
     assert s.verdict == "fail"
     assert "1998-11-02" in s.evidence and "1991-08-04" in s.evidence
+
+
+# ----------------------- a document against its own signature (Layer D, self)
+
+
+def _signed_ctx(printed_dob, *, source="ocr", payload_dob="1996-11-02"):
+    """An Aadhaar whose own QR verifies, with a printed DOB we control."""
+    theirs = Keypair.generate("SIH-REF-01")
+    envelope = sign({"doc_type": "aadhaar", "dob": payload_dob,
+                     "name": "RACHITA KUMER"}, theirs)
+    anchors = TrustAnchorStore([Anchor("SIH-REF-01", theirs.public_key,
+                                       "ed25519", True, None, None)])
+    ctx = ctx_for("aadhaar", {
+        "signed_payload": field("", raw=envelope, source="qr"),
+        "dob": field(printed_dob, source=source),
+    })
+    return ctx, anchors
+
+
+def test_a_card_that_disagrees_with_its_own_signature_is_a_hard_fail():
+    """The hole this closes.
+
+    Layer D compared a signed document against the *other* documents in the
+    session and never against the card carrying the signature. So a genuine
+    signed Aadhaar with its printed date of birth altered - QR untouched, so
+    the signature still verifies - produced no failing signal at all. Measured
+    on `var/demo/gen_aadhaar.png`: printed 1988-11-02 against a signed payload
+    of 1960-03-24, zero failures.
+
+    A signature proves the payload. It says nothing about the ink until
+    somebody compares the two, and nobody did.
+    """
+    ctx, anchors = _signed_ctx("1988-11-02")
+    s = by_id(layer_d.run(ctx, anchors=anchors))["validation.signed.dob_mismatch"]
+    assert s.verdict == "fail"
+    assert s.hard_fail is True
+    assert "1996-11-02" in s.evidence and "1988-11-02" in s.evidence
+
+
+def test_a_card_that_agrees_with_its_own_signature_passes():
+    ctx, anchors = _signed_ctx("1996-11-02")
+    s = by_id(layer_d.run(ctx, anchors=anchors))["validation.signed.dob_mismatch"]
+    assert s.verdict == "pass"
+
+
+def test_a_value_taken_from_the_payload_cannot_corroborate_the_payload():
+    """The VIZ/MRZ mistake, in its Layer D form.
+
+    With no detector `seed_from_payload` fills the field from the very QR we
+    would be checking it against. Comparing a signature with itself always
+    agrees and proves nothing, so it is `inconclusive` and costs coverage.
+    """
+    ctx, anchors = _signed_ctx("1996-11-02", source="qr")
+    s = by_id(layer_d.run(ctx, anchors=anchors))["validation.signed.dob_mismatch"]
+    assert s.verdict == "inconclusive"
+    assert "not read off the card" in s.evidence
+
+
+def test_a_fallback_read_may_not_condemn_a_card_by_its_own_signature():
+    """Same guard the cross-document half has: the VLM misreads characters,
+    and a one-character misread here would be a hard fail on a genuine card."""
+    ctx, anchors = _signed_ctx("1988-11-02", source="vlm")
+    s = by_id(layer_d.run(ctx, anchors=anchors))["validation.signed.dob_mismatch"]
+    assert s.verdict == "inconclusive"
+    assert "fallback reader" in s.evidence
+
+
+def test_an_unverified_signature_vouches_for_nothing():
+    ctx, _ = _signed_ctx("1988-11-02")
+    assert layer_d.run(ctx, anchors=TrustAnchorStore()) == []
