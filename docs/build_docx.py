@@ -216,6 +216,14 @@ callout("The single idea the whole system is built on",
 figure("fig1_problem_and_idea.png",
        "Figure 1 — The problem at a border check post, and what the system changes.")
 
+h2("The whole system in one flow")
+para("If only one diagram from this document is read, it should be this one. It carries "
+     "the pipeline, the data at each stage, the decision points, the arithmetic and the "
+     "verdict in a single frame. Everything after it is a magnification of one part.")
+figure("fig0_master.png",
+       "Figure 0 " + EM + " The whole system in one flow: what is read, what each check "
+       "emits, and how those become a verdict.", width=7.1)
+
 h2("System block diagram")
 para("Nine layers in a single process. Tier 1 runs on every document; Tier 2 fires only when "
      "the risk gate escalates, which is roughly one document in seven.")
