@@ -85,6 +85,90 @@ genuine pairs from ≥30 people, prints the full FAR/FRR curve, and **refuses
 `--apply` on a smaller set** rather than letting `calibrated: true` become a
 claim nobody measured.
 
+### The tool has now been run, on a stand-in, and it works
+
+2026-09-08. 34 synthetic people — a generated card for the document half, four
+jittered copies of the SFHQ portrait that was pasted onto it for the live half —
+136 genuine and 4,488 impostor pairs, 7 seconds end to end. Genuine median
+0.862, impostor median 0.016; it printed the curve, wrote `var/face_calibration.json`,
+warned that the set was NOT ENOUGH, and stopped.
+
+**No threshold was written and none may be.** Both halves of every pair there
+are the same synthetic render, so the "live" frame carries no print, no scanner,
+no lens, no decade of ageing — the entire domain shift the threshold exists to
+absorb. A number fitted to that would be worse than the honest placeholder,
+because the placeholder announces itself in the sentence the officer reads and a
+fitted one would not. `config/thresholds.yaml` still says `calibrated: false`.
+What the run establishes is only that the plumbing — directory walk, detect,
+align, embed, pair, curve, file — does not fall over the first time it sees
+input. That is the failure this was meant to rule out.
+
+Two things it did surface, both fixed:
+
+- `--apply` substituted the value and left the comment, so the file would have
+  read `threshold: 0.41  # TODO calibrate` next to `calibrated: true` — the one
+  place a reader checks to find out whether a number was measured, saying both.
+  The rewrite now replaces the whole line and records the pair count and the
+  people count in it. `--apply` cannot be run here, so `tests/test_face.py`
+  tests the rewrite against a string instead: it is the path that executes once,
+  on the day the volunteers are in the room.
+- The printed curve silently dropped its 0.55 row — `0.55 * 100 % 5` is not 0
+  in binary floating point.
+
+---
+
+## Running the calibration session
+
+The longest lead time in the project, because it needs people. Everything on the
+keyboard side is proven to run; what follows is the whole of it.
+
+**Bring.** The demo webcam — the calibration measures a lens, so a different
+camera measures a different thing. A colour printer and a scanner. A consent
+form on paper, one per volunteer. 30–50 volunteers; 12 frames each clears the
+500-pair floor with room for rejects.
+
+**Per volunteer**, roughly two minutes:
+
+```
+python scripts/capture_pairs.py 01 --consent
+```
+
+`P` takes the portrait for the card, `SPACE` takes a live frame, `Q` finishes.
+The window is green only when the frame passes the same quality gate the
+screening path applies to a live capture, so a frame too soft or too turned to
+embed is rejected while the volunteer is still standing there. It writes:
+
+```
+var/calibration/person_01/
+  CONSENT.txt      stamped by the script
+  portrait.jpg     print this onto a generated card
+  live_00.jpg …    the live half
+  doc.jpg          <- scan the printed card back to here
+```
+
+**The document half is printed, not real.** A volunteer's actual Aadhaar may
+never be used (CLAUDE.md rule 4). The recipe is `context/DATA.md` and D-entry
+"the workable version": their portrait → a synthetic identity with checksum-valid
+numbers → rendered onto a template → printed → scanned. That print-and-scan step
+*is* the domain shift being calibrated; skipping it and photographing the screen
+would measure nothing.
+
+> **One code change has to land first.** `data/generator/render.py:_portrait`
+> picks from the SFHQ pool by `face_seed` and cannot be handed an arbitrary
+> face, so there is currently no way to render `portrait.jpg` onto a card. It is
+> a small change and it blocks the whole session — do it before booking anyone.
+
+**Afterwards:**
+
+```
+python data/tools/calibrate_face.py --pairs var/calibration            # curve only
+python data/tools/calibrate_face.py --pairs var/calibration --apply    # writes it
+rm -rf var/calibration                                                 # after the event
+```
+
+`--apply` refuses below 500 genuine pairs from 30 people, so a short session
+gives a curve to read and leaves `calibrated: false` alone, which is correct.
+
 ---
 
 ## Two bugs this module surfaced
@@ -202,6 +286,17 @@ phone screen, on the demo camera, per MODULES.md.
   NIST FRVT found demographic false-match differentials above an order of
   magnitude across algorithms. An unmeasured system is not a system without a
   disparity, and that sentence is the honest answer to the question.
+
+  The *harness* was exercised on 2026-09-08, against two stand-in directories
+  built in the shape it reads — one FairFace-shaped with no identity column, one
+  RFW-shaped with two images per identity — 210 faces each. Both ran: the
+  FairFace shape produced FMR by group and correctly left FNMR blank with the
+  explanation; the RFW shape filled both halves. **No disparity was measured and
+  none could be.** SFHQ carries no demographic labels, so the group column in
+  those stand-ins was assigned arbitrarily; the numbers describe an arbitrary
+  partition of 210 faces and mean nothing. The disparity is still **unmeasured**.
+  What is now known is that the script will not fall over on the day the real
+  set arrives.
 - **Spoof testing** against an actual printed photo and an actual phone screen.
   Blocked on liveness weights. Untested liveness is theatre.
 - **1:N gallery at scale.** It works and is tested, but `store.search_faces` is
@@ -224,3 +319,8 @@ phone screen, on the demo camera, per MODULES.md.
 | 2026-09-07 | Export reference changed from a black frame to a ramp; zeros could not catch a scaling error |
 | 2026-09-07 | 1:1 verified against generated documents: genuine median 0.866, impostor max 0.229 |
 | 2026-09-07 | Bias harness written; disparity recorded as unmeasured |
+| 2026-09-08 | `calibrate_face.py` run end to end for the first time, on 34 synthetic stand-in people. Plumbing works; **no threshold applied and none may be** — both halves of every pair are the same render |
+| 2026-09-08 | `--apply` left the `TODO calibrate` comment beside `calibrated: true`; the rewrite now replaces the whole line and is tested against a string, since it executes exactly once and only on the day |
+| 2026-09-08 | `eval_bias.py` proven to run in both shapes — FairFace (FMR only) and RFW (both halves). Disparity still unmeasured; the stand-in group labels are arbitrary |
+| 2026-09-08 | `eval_liveness.py` re-run at 120 faces: live 0.973, print 0.001, screen 0.001, unchanged. Colour order, crop and output index still right |
+| 2026-09-08 | `scripts/capture_pairs.py` written — a mis-filed live frame moves the threshold *down*, and nothing downstream can tell |

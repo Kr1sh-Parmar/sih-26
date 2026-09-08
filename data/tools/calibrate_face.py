@@ -35,6 +35,7 @@ the whole curve is printed so a checkpoint commander can choose differently.
 import argparse
 import itertools
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -107,6 +108,29 @@ def curve(genuine: np.ndarray, impostor: np.ndarray) -> list[dict]:
     return points
 
 
+def apply_to(text: str, cut: float, people: int, pairs: int) -> str:
+    """Rewrite the `face.doc_live` block of config/thresholds.yaml.
+
+    The TODO comment is replaced along with the value it marks. A plain value
+    substitution left the file reading `threshold: 0.41  # TODO calibrate` next
+    to `calibrated: true` - the one place a reader looks to find out whether
+    this number was measured, saying both.
+    """
+    text, hits = re.subn(
+        r"(?m)^(  doc_live:\n)    threshold: [\d.]+.*$",
+        lambda m: f"{m.group(1)}    threshold: {cut:.2f}"
+                  f"            # calibrated on {pairs} doc-vs-live pairs "
+                  f"from {people} people",
+        text, count=1)
+    if not hits:
+        raise ValueError("no face.doc_live threshold line in thresholds.yaml")
+    text, hits = re.subn(r"(?m)^    calibrated: false", "    calibrated: true",
+                         text, count=1)
+    if not hits:
+        raise ValueError("no `calibrated: false` under face.doc_live")
+    return text
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pairs", default="var/calibration")
@@ -144,7 +168,9 @@ def main() -> int:
     points = curve(genuine, impostor)
     print(f"\n  {'threshold':>10s} {'FAR':>8s} {'FRR':>8s}")
     for point in points:
-        if point["threshold"] * 100 % 5 == 0:
+        # round() before the modulo: 0.55 * 100 is 55.00000000000001 in binary
+        # floating point, which silently dropped that row from the curve.
+        if round(point["threshold"] * 100) % 5 == 0:
             print(f"  {point['threshold']:10.2f} {point['far']:8.2%} "
                   f"{point['frr']:8.2%}")
 
@@ -170,11 +196,10 @@ def main() -> int:
             print("\nrefusing --apply: the set is below the size that makes "
                   "`calibrated: true` an honest claim.")
             return 1
-        text = THRESHOLDS.read_text(encoding="utf-8")
-        text = text.replace("    threshold: 0.32",
-                            f"    threshold: {chosen['threshold']:.2f}", 1)
-        text = text.replace("    calibrated: false", "    calibrated: true", 1)
-        THRESHOLDS.write_text(text, encoding="utf-8")
+        THRESHOLDS.write_text(
+            apply_to(THRESHOLDS.read_text(encoding="utf-8"),
+                     chosen["threshold"], len(people), len(genuine)),
+            encoding="utf-8")
         print("config/thresholds.yaml updated; face.doc_live is now calibrated")
     else:
         print("\nrerun with --apply to write it into config/thresholds.yaml")

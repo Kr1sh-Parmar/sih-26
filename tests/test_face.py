@@ -422,3 +422,37 @@ def test_liveness_confidence_is_certainty_not_the_raw_score():
     assert face.certainty(0.02, band) == 1.0, "a confident spoof must be certain"
     assert face.certainty(0.99, band) == 1.0, "a confident live read must be certain"
     assert face.certainty(sum(band) / 2, band) < 0.5, "mid-band must be uncertain"
+
+
+# ------------------------------------------------- the calibration apply path
+# The one code path in `data/tools/calibrate_face.py` that cannot be exercised
+# without the real doc-vs-live set, because it is gated on >=500 pairs from >=30
+# people. It writes the file the whole system reads its operating point from, it
+# runs exactly once, and it runs on the day the volunteers are in the room. So
+# it is tested here against a string rather than discovered there.
+
+def test_the_calibration_apply_rewrites_the_threshold_and_its_todo_together():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "calibrate_face", ROOT / "data" / "tools" / "calibrate_face.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    before = (ROOT / "config" / "thresholds.yaml").read_text(encoding="utf-8")
+    assert "calibrated: false" in before, "this test assumes an uncalibrated file"
+
+    after = module.apply_to(before, 0.41, people=34, pairs=612)
+
+    doc_live = after.split("  doc_live:")[1].split("  gallery:")[0]
+    assert "threshold: 0.41" in doc_live
+    assert "calibrated: true" in doc_live
+    assert "TODO" not in doc_live, (
+        "the TODO must go with the value it marks - otherwise the file says "
+        "`calibrated: true` and `TODO calibrate` in the same block")
+    assert "612" in doc_live and "34" in doc_live, "provenance of the number"
+
+    # Only the 1:1 block moves. The gallery threshold is calibrated separately
+    # and its `calibrated: false` is a different claim.
+    gallery = after.split("  gallery:")[1].split("  liveness:")[0]
+    assert "calibrated: false" in gallery
+    assert "threshold: 0.45" in gallery
