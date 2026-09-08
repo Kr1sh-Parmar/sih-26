@@ -84,6 +84,27 @@ by appearing in a payload. D48.
 python -m pytest     374 passed, 7 skipped
 ```
 
+### The fusion audit, completed
+
+`score.py` was audited earlier; `findings.py`, `gate.py` and `evidence.py` were not.
+Finishing it found a fifth defect of the same family.
+
+**A tamper heuristic could wear a signature's trust class.** A finding took the
+strongest class present in its anchor group, so a clean cryptographic pass beside a
+failing heuristic produced `trust=cryptographic` with a probabilistic headline — a
+guess with the authority of a signature, in the officer's evidence list. It also kept
+crypto precedence permanently disabled, so the documented suppression never fired.
+Fixed: the class comes from the failing members, the pool the headline already used.
+
+**The risk gate's signed/unsigned branch was dead** — it escalated above 0.25 while
+everything escalated above 0.15 three lines later. Removed rather than repaired: the
+obvious inversion would let a signature buy less scrutiny of the printing, which is the
+D48 assumption. `evidence.py` audited clean. D49, D50.
+
+```
+python -m pytest     379 passed, 7 skipped
+```
+
 ### Known-open, and deliberately so
 
 - **Latency misses budget on every document type.** Expected to improve when the detector replaces the VLM fallback on MRZ-less documents, but it is not measured and must not be claimed.
