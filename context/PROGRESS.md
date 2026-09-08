@@ -51,11 +51,21 @@ frontend verify      4/4 gates, 34 tests     (baseline 31)
 - `docs/PROVENANCE-SLIDE.md`; pycountry declined (strict subset of what is already held).
 - D46, D47 recorded.
 
+### Landed after the agents finished
+
+- **The fallback reported 4 ms for six seconds of work.** `ratify()` started its
+  own clock, so `extraction.vlm.*` timed the ratification and dropped the
+  Florence-2 run that produced the reads. On `gen_pan.png` the extraction stage
+  went from **4 ms to 6,051 ms**. Every per-stage table was wrong by three orders
+  of magnitude on exactly the documents that blow the budget.
+- **Devanagari deployed** — see above.
+
 ### Known-open, and deliberately so
 
 - **Latency misses budget on every document type.** Expected to improve when the detector replaces the VLM fallback on MRZ-less documents, but it is not measured and must not be claimed.
 - **Florence-2 memory.** 1.5 GB resident is a real constraint on checkpoint hardware.
 - Docker was never built here — not on PATH, engine down. Phase 5's clean-build gate is still open and has to run on the demo box.
+- **Devanagari is unproven on a scanned card.** It reads clean renders; on the generated cards, where Hindi is only small static text and labels, reads come back as noise. Do not claim Hindi field reading until the print-and-rescan pass tests it.
 
 ---
 
@@ -66,7 +76,7 @@ frontend verify      4/4 gates, 34 tests     (baseline 31)
 | # | Work | Files | Size | Note |
 |---|---|---|---|---|
 | 1 | **Active liveness (blink EAR)** | `api/`, `modules/face/liveness.py`, `frontend/src/screens/Capture.tsx` | 1–2 days | **Defaulted to SKIP.** Cut-list item 2 in ROADMAP.md. Needs a new FaceMesh model + dependency that risks `tests/test_offline.py`. Passive liveness is deployed and measured. Revisit only if a panel asks. |
-| 2 | **Devanagari OCR deployment** | run `scripts/fetch_ocr_models.py` | build-time | Not attempted this session. Blocked on a `paddle2onnx` toolchain, not on code — every wheel on PyPI imports `paddle`. Routed and honestly evidence-stringed today (D44). |
+| 2 | ~~Devanagari OCR deployment~~ | — | **done** | Deployed 2026-09-08. `models/rec_devanagari.onnx`, reads clean renders at 0.94–1.00. Drops inter-word spaces; unproven on scanned cards. |
 
 ### Blocked on the detector weights landing
 
