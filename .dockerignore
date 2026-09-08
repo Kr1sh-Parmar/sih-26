@@ -10,7 +10,14 @@ weights/
 
 # Datasets. `data/raw` and `data/processed` are hundreds of megabytes of
 # training inputs the screening path never opens.
-data/raw/
+data/raw/*
+# ...except the ISO 3166 reference table, which layer B needs to tell a country
+# code from a typo. Without it every nationality on every document reads
+# invalid. The watchlist source next to it stays out - it is 72 MB and the
+# image reads the SQLite store, not the CSVs.
+!data/raw/reference/
+data/raw/reference/*
+!data/raw/reference/iso3166/
 data/processed/
 SIH/
 

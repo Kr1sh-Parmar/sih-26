@@ -58,6 +58,19 @@ def _nationality(ctx: ScreeningContext) -> list[Signal]:
     if value is None:
         return []
     sid = f"validation.format.{ctx.profile['doc_type']}.nationality"
+
+    # A missing reference table is not a bad document. Without this the check
+    # reads every nationality as invalid, and it did exactly that in the
+    # container, where `data/raw/` is excluded (see N.codes_loaded).
+    if not N.codes_loaded():
+        return [emit(
+            ctx.profile, sid, "inconclusive",
+            f"Nationality {value.upper()} could not be checked - the ISO 3166 "
+            f"country-code table is not installed on this system",
+            confidence=0.0, anchor=anchor_for("nationality"),
+            region=box_of(ctx, "nationality"), started=started,
+        )]
+
     ok = N.is_country_code(value)
     name = N.country_codes().get(value.upper(), "")
     return [emit(

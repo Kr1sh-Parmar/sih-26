@@ -4,7 +4,15 @@
 
 # datasets and downloads — provenance is tracked in data/PROVENANCE.md,
 # the bytes are not committed
-data/raw/
+data/raw/*
+# ...except the ISO 3166 reference table. 134 KB, public domain, and the
+# screening path treats its absence as every country code being invalid - so
+# excluding it shipped a container that failed genuine Indian passports.
+# Narrow on purpose: data/raw/reference/watchlist/ is 72 MB of OFAC and UN
+# source that load_watchlist.py turns into SQLite, and SQLite is what ships.
+!data/raw/reference/
+data/raw/reference/*
+!data/raw/reference/iso3166/
 SIH/
 models/
 *.zip

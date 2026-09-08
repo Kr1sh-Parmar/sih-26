@@ -15,6 +15,7 @@ from core.trust import Anchor, TrustAnchorStore, verify_payload
 from fusion.context import NormalizedField, ScreeningContext
 from issuer.sign import Keypair, sign
 from modules.extraction import mrz as M
+from modules.extraction import normalize as N
 from modules.validation import (layer_a, layer_b, layer_c, layer_d, layer_e,
                                 layer_f, run)
 from modules.validation.checksums import verhoeff_digit
@@ -536,3 +537,35 @@ def test_the_distance_between_two_real_posts_is_about_right():
     posts = load_config("posts")["posts"]
     km = layer_f.haversine_km(posts["raxaul"], posts["sunauli"])
     assert 120 < km < 180        # ~148 km. A wrong formula lands nowhere near.
+
+
+# ------------------------------------------------- the ISO 3166 table itself
+
+
+def test_the_country_code_table_is_actually_installed():
+    """The bug this pins shipped, and was invisible on a developer machine.
+
+    `data/raw/` is excluded wholesale - it is hundreds of megabytes of imagery -
+    and the exclusion also caught the 134 KB ISO 3166 table. `country_codes()`
+    then fell back to the 16 ICAO supplementary codes, so `is_country_code`
+    said IND was not a country, and a genuine Indian passport picked up a
+    `fail` on its nationality in the container and in every fresh clone.
+
+    This asserts the file is where the packaging says it is. It fails in a
+    clone that has re-excluded it, which is the whole point.
+    """
+    assert N.codes_loaded(), (
+        "data/raw/reference/iso3166/country-codes.csv is missing. Check the "
+        "data/raw exception in .gitignore and .dockerignore."
+    )
+    assert N.is_country_code("IND")
+    assert len(N.country_codes()) > 200
+
+
+def test_a_missing_country_table_is_inconclusive_not_a_failed_document(monkeypatch):
+    """And if it does go missing, the document is not blamed for it."""
+    monkeypatch.setattr(N, "codes_loaded", lambda: False)
+    ctx = passport_ctx(nationality=field("IND"))
+    s = by_id(layer_b.run(ctx))["validation.format.passport.nationality"]
+    assert s.verdict == "inconclusive"
+    assert "not installed" in s.evidence
