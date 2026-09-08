@@ -17,7 +17,9 @@ without them until they are trained - every declared text field falls back to
 an `inconclusive` signal. The coverage floor then turns the verdict AMBER:
 nothing was read, so nothing disagreed, and that must not be a pass (D9).
 
-The VLM fallback (Florence-2) is still a stub.
+The MRZ is the exception: ICAO fixes its position, so it is read from the
+foot of the page without a detector. The VLM fallback (Florence-2) covers
+the documents that have no MRZ - and stands down on the ones that do (D45).
 """
 import time
 

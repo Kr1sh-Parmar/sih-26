@@ -596,3 +596,52 @@ A 5.6× difference on the common path, and the documents it helps are precisely 
 **The skip is announced, not silent.** `extraction.vlm.ratified` reports `not_applicable` saying the fallback was not needed because the zone supplied these fields with their own check digits. A check that quietly does not run is the thing this system spends most of its evidence strings avoiding.
 
 **Where the fallback still earns its place:** documents with no MRZ — Aadhaar, PAN, Voter ID, DL — where it contributes correct dates and grounded regions and there is no better reader. The guard keys on `ctx.fields["mrz"]`, which `_mrz_from_its_fixed_position` sets only once the strip's own check digits agree, so it is a verified read and not merely a read.
+
+---
+
+## D46 — A near-match on the watchlist reports, it never detains
+
+**Decision:** Layer E gained phonetic near-matching, and a near-match emits `inconclusive` — never `fail`.
+
+**Why the second half matters more than the first.** `validation.watchlist.hit` is listed under `hard_fail` in all six profiles. A `fail` verdict from this layer is not a score contribution that fusion weighs against others; it is RED, detain, immediately. So the question was never "can we match more names" — it was "what is a fuzzy match allowed to do once it finds one".
+
+A near-match is a guess about spelling. Letting a guess about spelling detain somebody at a border is the single worst thing this layer could do, and it would do it most often to exactly the names the transliteration is hardest for. So the three strengths of evidence are kept apart and given different verdicts:
+
+| Match | Verdict | Confidence |
+|---|---|---|
+| Document number, exact | `fail` | 1.0 |
+| Name key, exact | `fail` | 1.0 |
+| Name, phonetic near-miss | `inconclusive` | 0.30 + 0.30 × ratio |
+
+The evidence string says the spellings differ, names both, and asks for a manual check against the listed entry. That is a sentence an officer can act on; a detention triggered by a spell-checker is not.
+
+**How it works, and why it is stdlib.** Soundex buckets the 8,256 loaded OFAC + UN entries by sound; `difflib.SequenceMatcher` then decides, on characters, within the handful of candidates a bucket holds. Soundex alone is far too loose to accuse anyone with — collapsing "Gharat" and "Ghorat" is the point, but it collapses plenty of genuinely different names too — so it only ever picks candidates, and the ratio makes the call. `jellyfish` and `rapidfuzz` both do this better and neither is worth a wheel in an image that installs offline from a locked requirements file.
+
+**Measured on the loaded list:**
+
+| | |
+|---|---|
+| Index build, once per process | 72 ms, 7,751 buckets, largest bucket 4 names |
+| Lookup | p50 **0.06 ms**, p95 **0.11 ms** |
+| Recall, 60 listed names with one vowel transliterated | **56 / 60** |
+| False positives, 15 unrelated Indian names | **0** |
+
+The floor sits at a 0.84 character ratio: "Prodeep Ghorat" against "Pradeep Gharat" scores 0.857.
+
+**The ceiling, stated:** this catches vowel and transliteration drift. It does not catch a name written in a different script, a reversed patronymic, or a deliberate near-alias chosen to sit just outside the threshold. It is a better net than exact match, not a solved problem.
+
+---
+
+## D47 — Impossible transit fires only where transit can actually be observed
+
+**Decision:** `screening_events` gained a `post_id` column and `config/posts.yaml` gained the network's geography, so the impossible-transit check now genuinely fires. Its default did not change: with `SCREENING_POST_ID` unset it still reports `not_applicable`.
+
+**Why the default survived the implementation.** The reason this check was inert was never that the code was unwritten — it was that a single-post installation cannot observe transit. The only thing one machine can see is the same document twice at its own counter, which is what a re-capture and a secondary inspection both look like. An officer who is told "impossible transit" once, wrongly, stops reading the whole evidence list. That argument is unchanged by the column existing, so the `not_applicable` path is kept and tested.
+
+**What changed:** where two posts write into the same audit store, a prior screening at a *different* post is compared on distance and elapsed time. `config/posts.yaml` holds published ICP coordinates and a 60 km/h ground-speed ceiling; distance is computed by haversine rather than typed into an N×N table that has to be re-typed every time a post is added.
+
+**The threshold is deliberately generous.** 60 km/h is road travel through the Terai. A pair of crossings that beats it is not "suspicious" — it is physically impossible, which is the only claim worth making from two timestamps. The evidence names both posts, the distance, the time available and the time required, and offers the innocent explanation alongside the guilty one: either the document was duplicated, or one crossing was recorded against the wrong document.
+
+**A post outside the table is `inconclusive`, not ignored.** The distance is unmeasurable and inventing one would be worse than saying so — but the officer is still told the document was presented somewhere else.
+
+**The migration is additive and has to stay that way.** `screening_events` is the audit log; a verdict in it may be challenged months later (CONTEXT.md §3), so a migration that rewrites or drops a row destroys what the table is for. `ALTER TABLE ADD COLUMN` leaves the 13 existing events reading `post_id` NULL, which is the truthful answer for a machine that was not part of a network when it screened them.
