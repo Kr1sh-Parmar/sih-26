@@ -198,7 +198,16 @@ def persist(result: Result, store, officer_id: str | None = None) -> str:
     """
     number = result.ctx.fields.get("id_number")
     event_id = _record(result, store, number, officer_id)
-    embedding = result.ctx.embeddings.get("live") or result.ctx.embeddings.get("doc")
+    # `a or b` on numpy arrays raises "truth value of an array ... is
+    # ambiguous" - `or` calls `bool()` on the left operand, and an embedding is
+    # a 512-element array. This read `.get("live") or .get("doc")` and so threw
+    # on **every screening that produced a live face embedding**, which is the
+    # only case it was written for. It never fired because nothing supplied a
+    # live frame: no test did, and the console had no path to send one. The
+    # first real live capture hit it immediately.
+    embedding = result.ctx.embeddings.get("live")
+    if embedding is None:
+        embedding = result.ctx.embeddings.get("doc")
     if embedding is not None:
         store.add_face(event_id, embedding)
     return event_id

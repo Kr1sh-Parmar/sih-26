@@ -36,6 +36,26 @@ SIH/
 # so shipping the React tree inside the screening image serves nobody.
 frontend/
 
+# Except these. `api/main.py:38` reads `frontend/src/fixtures/` at *run* time -
+# it is where `/screen/replay/{name}` gets the signal sets for the rehearsed
+# demo scenes, which the console drives and DEMO.md depends on. Excluding the
+# whole tree took them with it, so every replay in the container failed with a
+# FileNotFoundError. 68 KB of JSON, and the endpoint does not work without it.
+#
+# They live under `frontend/` because the console's own fixture replay reads
+# the same four files, and one copy that both sides load is better than two
+# that can disagree about what GREEN looks like.
+#
+# Only the fixtures. Docker descends into an excluded directory when a pattern
+# beneath it is an exception, so naming the leaf is enough and the rest of the
+# React tree stays out. Verified, because getting this wrong fails silently by
+# dropping the fixtures again:
+#
+#   docker run --rm sih-screening-api find frontend -type f
+#
+# must list four files and nothing else.
+!frontend/src/fixtures
+
 # The build-time *dependency set*. Pillow and Faker never enter the screening
 # image; only the code that would use them, and only because the test suite
 # runs in the image (see the verify profile in docker-compose.yml) and

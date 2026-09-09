@@ -22,6 +22,25 @@ HAVE_MODEL = vlm.deployed()
 needs_model = pytest.mark.skipif(
     not HAVE_MODEL, reason="Florence-2 is not deployed; run scripts/fetch_vlm_model.py")
 
+# Three tests below feed the model a *generated* document, so they need the
+# generator's dependencies as well as the weights. Probe the dependencies rather
+# than the module: the generator imports Faker and Pillow inside its functions,
+# to keep them out of the screening path's import graph, so importing
+# `data.generator` succeeds in the screening image - where those dependencies
+# are deliberately absent - and then fails at call time.
+try:
+    import faker            # noqa: F401
+    from PIL import Image   # noqa: F401
+    HAVE_GENERATOR = True
+except ImportError:
+    HAVE_GENERATOR = False
+
+needs_generator = pytest.mark.skipif(
+    not HAVE_GENERATOR,
+    reason="the generator's build-time dependencies are not installed here "
+           "(deliberate in the screening image): "
+           "pip install -r requirements-build.txt")
+
 
 def ctx_for(doc_type="passport", image=None, **kw):
     return ScreeningContext(
@@ -180,6 +199,7 @@ def test_the_fallback_is_lazy_and_never_warmed_at_startup():
 # --------------------------------------------------------------- end to end
 
 @needs_model
+@needs_generator
 def test_the_model_reads_a_generated_passport_inside_its_budget():
     """The one test that loads the graphs. Measured numbers: data/EXTRACTION.md."""
     pytest.importorskip("PIL")
@@ -217,6 +237,7 @@ def test_every_id_the_fallback_emits_is_registered_and_unique():
 
 # ------------------------------------------- the fallback yields to the MRZ
 
+@needs_generator
 def test_the_fallback_does_not_run_once_the_mrz_has_been_read():
     """The largest latency win in the module, and it is a yield, not a race.
 
@@ -248,6 +269,7 @@ def test_the_fallback_does_not_run_once_the_mrz_has_been_read():
     assert "not needed" in ratified.evidence
 
 
+@needs_generator
 def test_the_fallback_still_runs_when_the_mrz_did_not_read():
     """The skip must not have turned into a blanket disable: a document whose
     zone could not be read is exactly the one that needs the fallback."""

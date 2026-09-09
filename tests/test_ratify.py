@@ -22,6 +22,13 @@ from modules.extraction.mrz import build_td3
 from modules.validation.checksums import verhoeff_digit
 
 try:
+    # The generator imports Faker and Pillow *inside* its functions, to keep them
+    # out of the screening path's import graph. So importing the module proves
+    # nothing about whether it can run, and this probe used to pass in the
+    # screening image - where those dependencies are deliberately absent - and
+    # then fail at call time. Probe the dependency, not the module.
+    import faker            # noqa: F401
+    from PIL import Image   # noqa: F401
     from data.generator import build as build_doc
     from data.generator.identity import build as build_identity
     HAVE_GENERATOR = True

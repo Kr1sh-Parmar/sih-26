@@ -381,6 +381,13 @@ def test_tier_two_tampering_stays_inside_its_600ms_budget():
 
 HAVE_GENERATOR = True
 try:
+    # The generator imports Faker and Pillow *inside* its functions, to keep them
+    # out of the screening path's import graph. So importing the module proves
+    # nothing about whether it can run, and this probe used to pass in the
+    # screening image - where those dependencies are deliberately absent - and
+    # then fail at call time. Probe the dependency, not the module.
+    import faker            # noqa: F401
+    from PIL import Image   # noqa: F401
     from data.generator import build as build_document
 except Exception:                                                # noqa: BLE001
     HAVE_GENERATOR = False

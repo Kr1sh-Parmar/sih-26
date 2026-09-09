@@ -353,17 +353,43 @@ def test_the_exported_head_matches_what_the_decoder_assumes():
         f"transpose; the decoder would mislabel every field")
 
 
-@needs_detector
-def test_the_class_list_is_the_frozen_22_class_ontology_in_dataset_order():
-    import yaml
+#: The training dataset. Present in a checkout, absent from the screening image
+#: - it is training data, and `.dockerignore` withholds `data/processed/`.
+FIELD_DATASET = registry.ROOT / "data" / "processed" / "fields" / "data.yaml"
 
+
+@needs_detector
+def test_the_sidecar_class_list_is_the_frozen_22_class_ontology():
+    """The half of the check that needs nothing but the shipped artefact.
+
+    Deliberately separate from the dataset comparison below: this one has to run
+    everywhere the detector runs, including inside the screening image, because
+    a sidecar naming a class the ontology does not have would mislabel fields in
+    production. The dataset is training data and is not in that image.
+    """
     from core.profiles import ONTOLOGY
     meta = registry.metadata(registry.FIELD_DETECTOR)
-    dataset = yaml.safe_load(
-        (registry.ROOT / "data" / "processed" / "fields" / "data.yaml")
-        .read_text(encoding="utf-8"))["names"]
-    assert meta["classes"] == dataset
     assert set(meta["classes"]) == set(ONTOLOGY)
+    assert len(meta["classes"]) == len(ONTOLOGY), "a class is listed twice"
+
+
+@needs_detector
+@pytest.mark.skipif(
+    not FIELD_DATASET.exists(),
+    reason="data/processed/fields is training data and is not in the screening "
+           "image; the ontology half runs there as its own test")
+def test_the_class_list_is_in_dataset_order():
+    """Order, not just membership.
+
+    `detect.py` indexes into this list with the model's raw class id, so the
+    sidecar agreeing with the ontology as a *set* is not enough - a permutation
+    would put every label on the wrong box while passing every other check.
+    """
+    import yaml
+
+    meta = registry.metadata(registry.FIELD_DETECTOR)
+    dataset = yaml.safe_load(FIELD_DATASET.read_text(encoding="utf-8"))["names"]
+    assert meta["classes"] == dataset
 
 
 @needs_detector

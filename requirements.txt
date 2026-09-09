@@ -5,7 +5,15 @@ fastapi>=0.115.2,<0.116     # <0.115.2 ships a starlette whose TestClient breaks
 uvicorn[standard]==0.27.1
 python-multipart==0.0.9      # multipart form parsing for POST /screen
 pyyaml==6.0.1
-numpy>=1.26,<3
+# Pinned, not a range, and the reason is a bug this file caused. Every other
+# line here is an exact pin; numpy was the exception, so the dev machine
+# resolved 1.26.4 and the Docker image resolved 2.4.6 - a major version apart.
+# NumPy 2's NEP 50 keeps float32 through a division by a Python float where 1.x
+# widened to float64, so detector boxes reached the websocket as np.float32 and
+# `json.dumps` refused them: every screening of a real document failed in the
+# container while the suite passed on the host. A range here means the tests
+# and the artefact are not running the same code.
+numpy==1.26.4
 opencv-python-headless==4.11.0.86   # matches the dev env; 4.13 requires numpy>=2
 cryptography>=42,<46         # Ed25519 sign and verify
 segno==1.6.6                 # QR encoding, issuer side, pure python

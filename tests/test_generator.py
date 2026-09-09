@@ -48,6 +48,19 @@ if HAVE_DEPS:
     from modules.extraction import mrz
     from modules.validation.checksums import (check_aadhaar, check_dl,
                                               check_epic, check_pan)
+else:
+    # `pytestmark` skips every test here, but `@pytest.mark.parametrize` over
+    # `DOC_TYPES` is evaluated at *collection* time and does not care that the
+    # module is about to be skipped. Without this the file raises NameError
+    # during collection and takes eleven other files down with it - which is
+    # exactly what happened the first time the suite was run inside the Docker
+    # image, where `requirements-build.txt` is deliberately not installed.
+    #
+    # Only `DOC_TYPES` is needed: it is the one name the decorators read. The
+    # rest are used inside test bodies, which never run in this branch.
+    # `core.profiles` needs no build-time dependency and holds the same frozen
+    # six; a test below asserts the two agree, so this cannot drift silently.
+    from core.profiles import DOC_TYPES
 
 
 # ------------------------------------------------------------------ identities
@@ -323,3 +336,16 @@ def test_generated_layouts_agree_with_the_measured_reference():
     assert drifted / checked < 0.5, (
         f"{drifted}/{checked} generated fields sit far from where real cards "
         f"put them - the templates have drifted")
+
+
+def test_the_collection_time_doc_type_fallback_matches_the_generator():
+    """The fallback above is only safe while the two lists agree.
+
+    `tests/test_generator.py` parametrises on `DOC_TYPES` at collection time and
+    takes it from `core.profiles` when the generator's build-time dependencies
+    are absent. If the generator ever grew a seventh document type, the skipped
+    environment would quietly test a different set from the real one.
+    """
+    from core.profiles import DOC_TYPES as from_profiles
+    from data.generator import DOC_TYPES as from_generator
+    assert set(from_profiles) == set(from_generator)

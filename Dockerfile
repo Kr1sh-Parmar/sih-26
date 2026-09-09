@@ -37,7 +37,43 @@ WORKDIR /app
 
 # Requirements first, so a code change does not re-resolve the dependency tree.
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+
+# The second half of this is not belt-and-braces, it is load-bearing.
+#
+# `rapidocr-onnxruntime` declares a dependency on plain `opencv-python`, so pip
+# installs it alongside the headless build this project pins. Both ship the same
+# `cv2` module, so whichever landed last wins - and the plain build needs
+# `libGL.so.1`, which `python:3.11-slim` does not have. The result was an image
+# that built cleanly, passed nothing, and could not `import cv2` at all. It was
+# only ever caught by running the suite *inside* the image
+# (`docker compose --profile verify run --rm verify`), which is what that
+# profile is for.
+#
+# Both are uninstalled and headless reinstalled, rather than removing only the
+# plain build: they share files, so uninstalling one leaves the other broken.
+#
+# The alternative - `apt-get install libgl1` - would also work, and would
+# contradict the comment at the top of this stage by dragging an X stack into a
+# server image to satisfy a dependency declaration nothing here uses. `rapidocr`
+# imports `cv2` and does not care which build provides it.
+#
+# ---
+#
+# `--mount=type=cache` and the retry settings are about the connection this is
+# built on, not about the dependency list. This layer pulls roughly 400 MB of
+# wheels; pip's defaults - 5 retries, a 15 s read timeout, and no cache because
+# of `--no-cache-dir` - meant a single dropped read nine minutes in threw the
+# whole layer away and started the download again from nothing. Twice.
+#
+# The cache mount is not part of the image: BuildKit keeps it outside the
+# layers, so nothing here inflates what ships, and a failed build now resumes
+# from the wheels it already has.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --retries 20 --timeout 120 -r requirements.txt \
+ && pip uninstall --yes opencv-python opencv-python-headless \
+ && pip install --retries 20 --timeout 120 \
+      "$(grep -i '^opencv-python-headless' requirements.txt | cut -d' ' -f1)" \
+ && python -c "import cv2; print('cv2', cv2.__version__, 'imports in the image')"
 
 COPY . .
 

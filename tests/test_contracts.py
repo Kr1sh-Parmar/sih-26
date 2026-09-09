@@ -12,6 +12,17 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACTS = ROOT / "context" / "CONTRACTS.md"
+
+#: The console's TypeScript contracts. Two tests below read them to prove the
+#: Python and TypeScript vocabularies have not drifted - which they can only do
+#: where the console's source exists. The screening image ships the console's
+#: runtime fixtures and nothing else of it (`.dockerignore`), so there the check
+#: skips and says why rather than failing on a missing file.
+TS_CONTRACTS = ROOT / "frontend" / "src" / "contracts"
+needs_ts_contracts = pytest.mark.skipif(
+    not (TS_CONTRACTS / "signal.ts").exists(),
+    reason="frontend/src/contracts is not in this tree; the console has its "
+           "own image and this check needs its TypeScript sources")
 SCREENING_PACKAGES = ("api", "core", "modules", "fusion")
 
 
@@ -131,6 +142,7 @@ def test_every_reliability_key_is_registered():
 
 # ------------------------------------------ frontend / backend parity
 
+@needs_ts_contracts
 def test_the_python_and_typescript_contracts_agree_on_their_vocabularies():
     """Drift between the dataclass and contracts/signal.ts is, in that file's
     own words, the single most expensive bug available in this project."""
@@ -152,6 +164,7 @@ def test_the_python_and_typescript_contracts_agree_on_their_vocabularies():
         assert f'"{phase}"' in events, f"phase {phase} is not in the console union"
 
 
+@needs_ts_contracts
 def test_the_signal_wire_shape_matches_the_typescript_interface():
     from fusion.signal import Signal, to_json
     ts = (ROOT / "frontend" / "src" / "contracts" / "signal.ts").read_text(encoding="utf-8")
