@@ -1,0 +1,92 @@
+# Voter ID (EPIC), Election Commission of India specimen format.
+#
+# Plain fidelity, per D18. The EPIC number is format-valid; there is no
+# published check character for it, which is why Layer A checks structure
+# rather than arithmetic here (D23).
+doc_type: voter_id
+size: [1000, 640]
+background: [250, 248, 240]
+ink: [28, 30, 36]
+guilloche: {enabled: false}
+
+static:
+  - {text: "भारत निर्वाचन आयोग", at: [0.30, 0.045], size: 17, font: devanagari, align: left}
+  - {text: "ELECTION COMMISSION OF INDIA", at: [0.30, 0.115], size: 13, font: bold, align: left, colour: [70, 74, 92]}
+
+fields:
+  - {class: emblem, kind: emblem, box: [0.055, 0.045, 0.150, 0.170]}
+
+  - class: doc_title
+    kind: text
+    box: [0.640, 0.050, 0.960, 0.120]
+    text: "ELECTOR PHOTO IDENTITY CARD"
+    size: 10
+    font: bold
+
+  - class: id_number
+    kind: text
+    box: [0.640, 0.150, 0.960, 0.230]
+    label: "EPIC No."
+    value: id_number
+    size: 20
+    font: bold
+
+  - {class: person_photo, kind: photo, box: [0.055, 0.240, 0.265, 0.645]}
+
+  - class: name
+    kind: text
+    box: [0.310, 0.250, 0.760, 0.325]
+    label: "निर्वाचक का नाम / Elector Name"
+    label_font: devanagari
+    value: name
+    size: 18
+
+  - class: father_name
+    kind: text
+    box: [0.310, 0.345, 0.760, 0.418]
+    label: "पिता का नाम / Father Name"
+    label_font: devanagari
+    value: father_name
+    size: 15
+
+  - class: gender
+    kind: text
+    box: [0.310, 0.438, 0.520, 0.500]
+    label: "लिंग / Sex"
+    label_font: devanagari
+    value: gender
+    size: 15
+
+  - class: dob
+    kind: text
+    box: [0.545, 0.438, 0.790, 0.500]
+    label: "जन्म तिथि / DOB"
+    label_font: devanagari
+    value: dob
+    size: 15
+
+  - class: address
+    kind: text
+    box: [0.310, 0.520, 0.780, 0.645]
+    label: "पता / Address"
+    label_font: devanagari
+    value: address
+    size: 11
+    wrap: true
+
+  - class: issue_date
+    kind: text
+    box: [0.310, 0.680, 0.560, 0.745]
+    label: "Date of Issue"
+    value: issue_date
+    size: 13
+
+  - class: issuing_authority
+    kind: text
+    box: [0.590, 0.680, 0.960, 0.745]
+    label: "Issued By"
+    text: "ELECTORAL REGISTRATION OFFICER"
+    size: 10
+
+  - {class: qr_code, kind: qr, box: [0.810, 0.250, 0.960, 0.500]}
+  - {class: signature, kind: signature, box: [0.055, 0.690, 0.265, 0.775]}

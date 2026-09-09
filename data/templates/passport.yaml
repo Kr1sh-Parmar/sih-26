@@ -1,0 +1,140 @@
+# Indian passport, ICAO TD3 data page.
+#
+# Full fidelity, per D18: passport and Aadhaar are the two documents that buy
+# the complete physical tampering track, so they are the two that carry the
+# features it reads - guilloche line-work, a ghost portrait, a hologram patch
+# and an MRZ.
+#
+# Layout follows the ICAO 9303 Part 4 data-page arrangement: photo left,
+# machine-readable zone across the bottom two lines. The state emblem is a
+# stand-in mark, not the real one - see render.py:_draw_emblem.
+doc_type: passport
+size: [1000, 700]            # 125x88mm at roughly 200 dpi
+background: [246, 243, 234]
+ink: [26, 28, 38]
+
+guilloche:
+  enabled: true
+  colour: [150, 165, 200]
+  curves: 5
+  opacity: 42
+
+microtext:
+  box: [0.06, 0.955, 0.60, 0.985]
+  text: "REPUBLICOFINDIA"
+  colour: [120, 125, 140]
+
+static:
+  - {text: "PASSPORT",        at: [0.50, 0.030], size: 15, font: regular, align: center, colour: [90, 95, 115]}
+  - {text: "पासपोर्ट",          at: [0.50, 0.062], size: 15, font: devanagari, align: center, colour: [90, 95, 115]}
+  - {text: "Type / प्रकार",     at: [0.33, 0.155], size: 9,  font: devanagari, align: left, colour: [95, 98, 110]}
+  - {text: "P",               at: [0.33, 0.180], size: 15, font: bold, align: left}
+  - {text: "Code / कोड",       at: [0.44, 0.155], size: 9,  font: devanagari, align: left, colour: [95, 98, 110]}
+  - {text: "IND",             at: [0.44, 0.180], size: 15, font: bold, align: left}
+
+fields:
+  - class: doc_title
+    kind: text
+    box: [0.30, 0.085, 0.72, 0.135]
+    text: "REPUBLIC OF INDIA"
+    size: 22
+    font: bold
+
+  - class: emblem
+    kind: emblem
+    box: [0.055, 0.045, 0.155, 0.145]
+
+  - class: person_photo
+    kind: photo
+    box: [0.055, 0.175, 0.275, 0.560]
+
+  - class: signature
+    kind: signature
+    box: [0.055, 0.585, 0.275, 0.650]
+
+  - class: id_number
+    kind: text
+    box: [0.560, 0.150, 0.940, 0.215]
+    label: "Passport No. / पासपोर्ट सं."
+    label_font: devanagari
+    value: passport_number
+    size: 18
+    font: bold
+
+  - class: name
+    kind: text
+    box: [0.310, 0.230, 0.940, 0.300]
+    label: "Surname and Given Names / नाम"
+    label_font: devanagari
+    value: name
+    size: 17
+
+  - class: father_name
+    kind: text
+    box: [0.310, 0.310, 0.940, 0.372]
+    label: "Name of Father / पिता का नाम"
+    label_font: devanagari
+    value: father_name
+    size: 15
+
+  - class: nationality
+    kind: text
+    box: [0.310, 0.382, 0.520, 0.440]
+    label: "Nationality / राष्ट्रीयता"
+    label_font: devanagari
+    value: nationality
+    size: 15
+
+  - class: gender
+    kind: text
+    box: [0.545, 0.382, 0.700, 0.440]
+    label: "Sex / लिंग"
+    label_font: devanagari
+    value: gender
+    size: 15
+
+  - class: dob
+    kind: text
+    box: [0.720, 0.382, 0.940, 0.440]
+    label: "Date of Birth / जन्म तिथि"
+    label_font: devanagari
+    value: dob
+    size: 15
+
+  - class: issue_date
+    kind: text
+    box: [0.310, 0.452, 0.520, 0.510]
+    label: "Date of Issue"
+    value: issue_date
+    size: 14
+
+  - class: expiry_date
+    kind: text
+    box: [0.545, 0.452, 0.760, 0.510]
+    label: "Date of Expiry"
+    value: expiry_date
+    size: 14
+
+  - class: issuing_authority
+    kind: text
+    box: [0.310, 0.522, 0.700, 0.578]
+    label: "Place of Issue"
+    value: passport_office
+    size: 15
+
+  - class: hologram
+    kind: hologram
+    box: [0.790, 0.455, 0.940, 0.600]
+
+  - class: ghost_photo
+    kind: ghost
+    box: [0.320, 0.600, 0.430, 0.760]
+
+  - class: qr_code
+    kind: qr
+    box: [0.800, 0.610, 0.945, 0.770]
+
+  - class: mrz
+    kind: mrz
+    box: [0.030, 0.800, 0.975, 0.945]
+    size: 20

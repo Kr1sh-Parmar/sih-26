@@ -4,7 +4,15 @@
 
 # datasets and downloads — provenance is tracked in data/PROVENANCE.md,
 # the bytes are not committed
-data/raw/
+data/raw/*
+# ...except the ISO 3166 reference table. 134 KB, public domain, and the
+# screening path treats its absence as every country code being invalid - so
+# excluding it shipped a container that failed genuine Indian passports.
+# Narrow on purpose: data/raw/reference/watchlist/ is 72 MB of OFAC and UN
+# source that load_watchlist.py turns into SQLite, and SQLite is what ships.
+!data/raw/reference/
+data/raw/reference/*
+!data/raw/reference/iso3166/
 SIH/
 models/
 *.zip
@@ -17,6 +25,15 @@ data/processed/
 # runtime state (sqlite db, dev salt)
 var/
 
+# Build-time font assets, fetched by scripts/fetch_fonts.py. OFL and freely
+# redistributable, but 2 MB of binaries that a clean clone can re-fetch in a
+# second - same treatment as models/.
+data/templates/fonts/*.ttf
+
+# Generated documents. Reproducible from a seed by data/tools/generate_documents.py,
+# so the bytes are not worth committing - the generator is.
+data/processed/generated/
+
 # build-time training environment (CUDA torch, ultralytics). Never used at inference.
 .venv-train/
 runs/
@@ -25,3 +42,13 @@ runs/
 # Build-time downloads, not source. The shipped detector lives in models/.
 *.pt
 weights/
+
+# Real ID documents and live-face captures staged for manual testing outside
+# the calibration flow. CLAUDE.md rule 4: no real Aadhaar, PAN, passport,
+# Voter ID or DL image or number in any commit, ever. This directory exists
+# only on disk, for exactly this reason.
+real data fr testing/
+
+# Playwright MCP browser snapshots. Scratch output from driving the console
+# during development, not source and not worth a diff.
+.playwright-mcp/

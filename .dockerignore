@@ -1,0 +1,92 @@
+# Keep the build context small and keep CUDA out of the screening image.
+
+# The training environment. Torch, torchvision, ultralytics - gigabytes, and
+# every one of them a thing CLAUDE.md rule 2 says must not be in this process.
+.venv-train/
+.venv/
+runs/
+*.pt
+weights/
+
+# Datasets. `data/raw` and `data/processed` are hundreds of megabytes of
+# training inputs the screening path never opens.
+data/raw/*
+# ...except the ISO 3166 reference table, which layer B needs to tell a country
+# code from a typo. Without it every nationality on every document reads
+# invalid. The watchlist source next to it stays out - it is 72 MB and the
+# image reads the SQLite store, not the CSVs.
+!data/raw/reference/
+data/raw/reference/*
+!data/raw/reference/iso3166/
+data/processed/
+SIH/
+
+# The archives those directories were unpacked from - 2.3 GB between them, and
+# they were the single largest thing in the first image I built. `.gitignore`
+# has excluded `*.zip` since the beginning; this file did not, and nothing
+# warns you: the build simply succeeds and the image is a few gigabytes larger
+# than it should be. Measure the image, do not assume the ignore file is
+# complete.
+*.zip
+*.tar
+*.tar.gz
+
+# The console has its own image and its own build context (`docker-compose.yml`,
+# the `console` service). Nothing under `api/ core/ fusion/ modules/` reads it,
+# so shipping the React tree inside the screening image serves nobody.
+frontend/
+
+# Except these. `api/main.py:38` reads `frontend/src/fixtures/` at *run* time -
+# it is where `/screen/replay/{name}` gets the signal sets for the rehearsed
+# demo scenes, which the console drives and DEMO.md depends on. Excluding the
+# whole tree took them with it, so every replay in the container failed with a
+# FileNotFoundError. 68 KB of JSON, and the endpoint does not work without it.
+#
+# They live under `frontend/` because the console's own fixture replay reads
+# the same four files, and one copy that both sides load is better than two
+# that can disagree about what GREEN looks like.
+#
+# Only the fixtures. Docker descends into an excluded directory when a pattern
+# beneath it is an exception, so naming the leaf is enough and the rest of the
+# React tree stays out. Verified, because getting this wrong fails silently by
+# dropping the fixtures again:
+#
+#   docker run --rm sih-screening-api find frontend -type f
+#
+# must list four files and nothing else.
+!frontend/src/fixtures
+
+# The build-time *dependency set*. Pillow and Faker never enter the screening
+# image; only the code that would use them, and only because the test suite
+# runs in the image (see the verify profile in docker-compose.yml) and
+# tests/test_tamper.py imports data/tools/mutate.py.
+#
+# data/generator/ and data/tools/ therefore stay in the image while their
+# dependencies do not - so the generator tests skip there rather than run, and
+# nothing on the screening path can import a downloader. That last part is not
+# a convention: tests/test_offline.py enforces it by walking the AST.
+requirements-build.txt
+
+# Runtime state. `var/` is a volume; baking a database into the image would
+# ship one machine's screening history to every other machine.
+var/
+*.db
+
+# Local noise.
+.git/
+.github/
+.claude/
+.pytest_cache/
+__pycache__/
+*.pyc
+.playwright-mcp/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+infooo.pdf
+
+# NOT ignored, deliberately:
+#   models/     baked in - that is the offline claim (CLAUDE.md rule 3)
+#   config/     profiles, weights, bands, the measured layout reference
+#   profiles/   the six document profiles
+#   tests/      so `docker compose run api pytest` can prove the image

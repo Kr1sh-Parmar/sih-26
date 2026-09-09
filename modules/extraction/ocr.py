@@ -41,6 +41,18 @@ PAD_RATIO = 0.06
 #: well over it.
 SINGLE_LINE_ASPECT = 3.0
 
+#: Scripts a profile may declare in `extract.ocr_lang`, and whether we can
+#: actually read them. `en` is the bundled PP-OCRv4 recogniser; `hi` needs a
+#: Devanagari recogniser that is fetched separately and is not deployed today.
+#:
+#: The second script is a **fallback, not a switch**. Every value on all six of
+#: these documents is printed in Latin as well as Devanagari - the Hindi is a
+#: second rendering of the same field, not a field of its own - so reading Latin
+#: first costs nothing and succeeds almost always. The Devanagari pass only runs
+#: when the Latin one came back empty, which is the case that was silently
+#: producing an unexplained `inconclusive`.
+SECOND_SCRIPT = "hi"
+
 #: Line geometries the parser supports. A read whose lengths match none of
 #: these has dropped or gained a character, which the check digits would report
 #: as tampering rather than as a bad scan.
@@ -80,7 +92,7 @@ def crop(image: np.ndarray, box, pad: float = PAD_RATIO) -> np.ndarray | None:
     return image[y1:y2, x1:x2]
 
 
-def read(patch: np.ndarray) -> tuple[str, float]:
+def read(patch: np.ndarray, lang: str = "en") -> tuple[str, float]:
     """One crop to (text, confidence). Empty string when nothing was read.
 
     A field crop is a single line of text, so recognition runs directly on it
@@ -101,7 +113,7 @@ def read(patch: np.ndarray) -> tuple[str, float]:
         patch = cv2.resize(patch, None, fx=factor, fy=factor,
                            interpolation=cv2.INTER_CUBIC)
 
-    engine = registry.ocr_engine()
+    engine = registry.ocr_engine(lang)
     if w / max(h, 1) >= SINGLE_LINE_ASPECT:
         result, _elapse = engine(patch, use_det=False, use_cls=False, use_rec=True)
         if not result:
@@ -187,6 +199,30 @@ def apply_positional_charset(lines: list[str]) -> list[str]:
     return [first, "".join(second)]
 
 
+def select_mrz_lines(lines: list[str]) -> list[str]:
+    """Pick the machine-readable zone out of a crop that caught more than it.
+
+    A crop of the bottom of a passport reliably reads the two MRZ lines at
+    exactly 44 characters each - and then also picks up the microtext strip and
+    the page border underneath, arriving as four lines of 44/44/22/18. The
+    geometry gate then rejected the whole thing, so a *perfectly read* MRZ was
+    thrown away because the crop was not tight.
+
+    This selects the first contiguous run whose lines all match one of the
+    supported geometries. It does not weaken the gate: the selected lines must
+    still be exactly the right width, still pass the charset check, and still
+    satisfy all five ICAO check digits in Layer A - which is the validator that
+    actually distinguishes a forgery from a bad scan. What it removes is a
+    failure mode where extra rows of *unrelated* text condemned a good read.
+    """
+    for count, width in MRZ_GEOMETRY:
+        for start in range(len(lines) - count + 1):
+            window = lines[start:start + count]
+            if all(len(line) == width for line in window):
+                return window
+    return lines
+
+
 def read_mrz(patch: np.ndarray) -> tuple[str | None, float, str]:
     """Read the MRZ strip. Returns (strip or None, confidence, reason).
 
@@ -209,6 +245,12 @@ def read_mrz(patch: np.ndarray) -> tuple[str | None, float, str]:
     rows = sorted(result, key=lambda r: _top(r[0]))
     lines = [coerce_mrz(str(r[1])) for r in rows]
     lines = [l for l in lines if l]
+    # Select before repairing and before the charset check. Both assume they are
+    # looking at the MRZ and nothing else: `apply_positional_charset` returns
+    # untouched unless it is given exactly two lines, so with a stray row present
+    # it silently did nothing, and the charset check would condemn the MRZ for
+    # characters that belonged to the microtext beneath it.
+    lines = select_mrz_lines(lines)
     lines = apply_positional_charset(lines)
     confidence = min((float(r[2]) for r in rows), default=0.0)
 
@@ -261,12 +303,31 @@ def _read_text_field(ctx: ScreeningContext, source, name: str, box) -> list[Sign
     from modules.extraction import normalise_field
 
     started = time.perf_counter()
-    text, confidence = read(crop(source, box))
+    patch = crop(source, box)
+    text, confidence = read(patch)
+
+    declared = [str(x).lower() for x in ctx.profile["extract"].get("ocr_lang", [])]
+    wants_devanagari = SECOND_SCRIPT in declared
+    deployed = registry.devanagari_rec() is not None
+    if not text and wants_devanagari and deployed:
+        text, confidence = read(patch, SECOND_SCRIPT)
+
     ms = int((time.perf_counter() - started) * 1000)
     sid = f"extraction.ocr.{name}.confidence"
     shown = field_label(name)
 
     if not text:
+        # Naming the cause matters. The bundled recogniser returns an empty
+        # string on Devanagari rather than guessing, so on a card printed only
+        # in Hindi the generic "could not be read" is true and useless - an
+        # officer would re-capture a document that will read exactly the same
+        # way the second time.
+        if wants_devanagari and not deployed:
+            return [_unread(sid, name,
+                            f"The {shown} could not be read. If this field is "
+                            f"printed only in Hindi, that is expected - the "
+                            f"Devanagari reader is not deployed on this system",
+                            ms, region=box)]
         return [_unread(sid, name, f"The {shown} could not be read from the "
                                    f"document", ms, region=box)]
 

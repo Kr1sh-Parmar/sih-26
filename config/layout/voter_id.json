@@ -1,0 +1,80 @@
+{
+  "doc_type": "voter_id",
+  "source": "data/processed/fields, labelled genuine cards",
+  "cards": 1274,
+  "min_cards_to_check": 50,
+  "fields": {
+    "address": {
+      "cx": 0.4477,
+      "cy": 0.2738,
+      "mad_x": 0.0614,
+      "mad_y": 0.0921,
+      "n": 819,
+      "boxes": 824
+    },
+    "emblem": {
+      "cx": 0.4703,
+      "cy": 0.0922,
+      "mad_x": 0.0822,
+      "mad_y": 0.0266,
+      "n": 449,
+      "boxes": 451
+    },
+    "father_name": {
+      "cx": 0.55,
+      "cy": 0.8086,
+      "mad_x": 0.0672,
+      "mad_y": 0.0996,
+      "n": 449,
+      "boxes": 462
+    },
+    "gender": {
+      "cx": 0.518,
+      "cy": 0.109,
+      "mad_x": 0.0938,
+      "mad_y": 0.1274,
+      "n": 597,
+      "boxes": 606
+    },
+    "id_number": {
+      "cx": 0.7512,
+      "cy": 0.2016,
+      "mad_x": 0.0591,
+      "mad_y": 0.1784,
+      "n": 829,
+      "boxes": 838
+    },
+    "issue_date": {
+      "cx": 0.3203,
+      "cy": 0.532,
+      "mad_x": 0.0938,
+      "mad_y": 0.2247,
+      "n": 801,
+      "boxes": 805
+    },
+    "issuing_authority": {
+      "cx": 0.4969,
+      "cy": 0.1598,
+      "mad_x": 0.0237,
+      "mad_y": 0.0793,
+      "n": 451,
+      "boxes": 546
+    },
+    "name": {
+      "cx": 0.5227,
+      "cy": 0.6922,
+      "mad_x": 0.1089,
+      "mad_y": 0.0683,
+      "n": 451,
+      "boxes": 469
+    },
+    "person_photo": {
+      "cx": 0.6766,
+      "cy": 0.4461,
+      "mad_x": 0.1703,
+      "mad_y": 0.0405,
+      "n": 449,
+      "boxes": 449
+    }
+  }
+}

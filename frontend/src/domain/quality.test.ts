@@ -47,3 +47,22 @@ describe("gradeCapture", () => {
     expect(find(gate({ brightness: 140 }), "brightness").ok).toBe(true);
   });
 });
+
+describe("the resolution gate agrees with the pipeline", () => {
+  it("accepts what config/thresholds.yaml accepts", () => {
+    // `quality.min_short_edge_px: 600` in config/thresholds.yaml. This gate
+    // used to demand 700, so the console blocked every generated demo card
+    // (1000x640) with "Move closer" while the backend screened it happily.
+    // A console stricter than the pipeline sends officers to re-capture
+    // documents that were already good enough.
+    const reading = { width: 1000, height: 640, sharpness: 2858, brightness: 120, glare: 0.1 };
+    const gate = gradeCapture(reading, "upload").find((g) => g.key === "resolution");
+    expect(gate?.ok).toBe(true);
+  });
+
+  it("still rejects a capture the pipeline would refuse", () => {
+    const reading = { width: 900, height: 599, sharpness: 2858, brightness: 120, glare: 0.1 };
+    const gate = gradeCapture(reading, "upload").find((g) => g.key === "resolution");
+    expect(gate?.ok).toBe(false);
+  });
+});

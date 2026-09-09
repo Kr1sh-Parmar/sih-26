@@ -81,32 +81,23 @@ def decode(image: np.ndarray) -> tuple[str | None, tuple | None]:
 
 
 def scan(image: np.ndarray, profile: dict) -> tuple[str | None, list[Signal]]:
-    """Decode the document QR and report whether one was found.
+    """Decode the document QR. Returns (payload, signals).
 
-    Absence is not failure. Most of these documents carry no code at all, which
-    is `not_applicable`; a code that is present but unreadable is
-    `inconclusive` and rightly costs coverage.
+    **No signals.** This used to emit `validation.signature.valid` when no
+    payload was readable, which Layer A also emits for the same condition - so
+    every screening carried the signal twice, and on passport, where it is
+    weighted 0.25, a missing signature dragged coverage down twice as hard as
+    it should. That is the correlated-signal double count D8 exists to prevent,
+    committed inside one pipeline rather than across two.
+
+    Layer A's version is the right one on every count: it reads `hard_fail`
+    from the profile through `emit()` rather than hardcoding False, and it keys
+    off `verify.signature`, which is what actually declares whether this
+    document should carry a signature - the presence of a `qr_code` class in
+    the detector list is a fact about the *detector*, not about the document.
+
+    Extraction locates and reads. Whether a signature verifies is validation's
+    to say, and it says it once.
     """
-    started = time.perf_counter()
-    expected = "qr_code" in profile["extract"]["detector_classes"]
-    payload, region = decode(image)
-    ms = int((time.perf_counter() - started) * 1000)
-
-    if payload:
-        return payload, []
-    if not expected:
-        return None, [Signal(
-            id="validation.signature.valid", module="validation", tier=1,
-            verdict="not_applicable", confidence=1.0, trust_class="unverified",
-            hard_fail=False, anchor="document",
-            evidence=f"{describe_start(profile['doc_type'])} carries no signed "
-                     f"payload, so it has no cryptographic anchor of its own",
-            latency_ms=ms,
-        )]
-    return None, [Signal(
-        id="validation.signature.valid", module="validation", tier=1,
-        verdict="inconclusive", confidence=0.0, trust_class="unverified",
-        hard_fail=False, anchor="document",
-        evidence="No readable signed payload was found on this document",
-        region=region, latency_ms=ms,
-    )]
+    payload, _region = decode(image)
+    return payload, []

@@ -51,7 +51,8 @@ def country_codes() -> dict[str, str]:
     """alpha-3 to country name, ISO 3166-1 plus the ICAO supplementary codes."""
     codes = dict(ICAO_EXTRA)
     if not ISO3166_CSV.exists():
-        return codes
+        return codes          # see codes_loaded(): callers must not read this
+                              # as "every country code is invalid"
     import csv
     with ISO3166_CSV.open(encoding="utf-8", newline="") as fh:
         for row in csv.DictReader(fh):
@@ -61,6 +62,26 @@ def country_codes() -> dict[str, str]:
             if len(alpha3) == 3:
                 codes.setdefault(alpha3, name or alpha3)
     return codes
+
+
+def codes_loaded() -> bool:
+    """Is the ISO 3166 table actually here?
+
+    It is a 134 KB file under `data/raw/`, which is excluded wholesale because
+    the rest of that tree is hundreds of megabytes of imagery. When the
+    exclusion also caught this file, `country_codes()` fell back to the 16 ICAO
+    supplementary codes and `is_country_code("IND")` returned False - so a
+    genuine Indian passport was told its nationality is not a real country, in
+    the shipping container and in every fresh clone.
+
+    The bug was invisible on a developer machine, where the file is present
+    because a fetch script once put it there. So the absence is now something a
+    caller can ask about, and Layer B reports `inconclusive` rather than `fail`
+    when the table is missing - an unreadable reference table means the check
+    could not be made, which is not the same as the document being wrong
+    (CLAUDE.md: `inconclusive` is not `pass`).
+    """
+    return ISO3166_CSV.exists()
 
 
 def is_country_code(code: str) -> bool:

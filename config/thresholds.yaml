@@ -16,14 +16,123 @@ face:
   doc_live:
     threshold: 0.32            # TODO calibrate on >=500 doc-vs-live pairs, >=30 people
     review_band: [0.26, 0.38]  # escalate to Tier 2 inside this band
-    calibrated: false          # flipped to true only by modules/face/calibrate.py
+    calibrated: false          # flipped only by data/tools/calibrate_face.py
   gallery:
     threshold: 0.45            # stricter than 1:1 — many comparisons, not one
     calibrated: false
   liveness:
     passive_pass: 0.60
     uncertain_band: [0.40, 0.60]
+  # Quality of the FACE CROP, not of the page. The `quality` block above gates
+  # the whole capture; a crisp document can still carry a portrait too soft to
+  # embed, and that is the capture whose match score is a guess.
+  quality:
+    doc_blur_min: 30.0         # printed photos are softer than a camera frame
+    live_blur_min: 80.0
+    doc_min_px: 48             # face width; below this the 112px crop is upscaled guesswork
+    live_min_px: 80
+    max_yaw: 0.35              # nose offset between the eyes, 0 square to 1
 
 gate:
+  # One threshold, not two. Every document escalates on the same number:
+  # a verified signature proves the payload and says nothing about the ink,
+  # so it must not buy a card less forensic scrutiny (D48, D49).
   tamper_clear_below: 0.15
-  tamper_escalate_above: 0.25
+
+# Tampering. Every cut here was chosen by data/tools/eval_tamper.py from the
+# *clean* set alone - the value at which 5% of genuine cards get flagged - and
+# no forgery took part in choosing any of them. Detection rates are then
+# measured against families that are all held out by construction. A threshold
+# tuned against the forgeries it is later scored on measures the generator
+# rather than the forgery. Measured numbers: data/TAMPERING.md.
+tamper:
+  # ELA: robust-z of the worst block's error-per-unit-detail against the rest
+  # of the page. Fragile by construction - recompression flattens it (D15).
+  ela_z: 16.8
+
+  # Copy-move: a cluster of keypoint matches sharing one translation offset.
+  # The offset floor rejects the trivial self-match; the count floor rejects
+  # guilloche and repeated text, which genuinely do repeat.
+  copy_move_min_matches: 10
+  copy_move_min_offset_frac: 0.05
+  copy_move_offset_bucket_px: 8
+  # Both ends of a real duplication sit inside a small part of the page. A
+  # repeating security background matches at consistent offsets too, but its
+  # matches are spread everywhere - this is the guard that tells them apart.
+  copy_move_max_span_frac: 0.45
+  copy_move_max_overlap: 0.35
+  # The decisive one. Keypoints proposing a duplication is a hypothesis; the two
+  # regions actually being the same picture is the evidence.
+  copy_move_min_correlation: 0.80
+  # Genuine cards repeat small design elements on purpose. A forger pastes
+  # something field-sized.
+  copy_move_min_region_frac: 0.004
+
+  # SRM residual: blocks whose noise statistic is a robust-z outlier against
+  # the image's own distribution. Inconsistency, not PRNU (D13).
+  noise_outlier_mad: 4.5
+  noise_outlier_frac: 0.078
+
+  # Halftone: fraction of blocks whose dominant screen frequency disagrees
+  # with the document's own modal frequency.
+  halftone_disagree_frac: 0.28
+
+  # Print consistency: coefficient of variation of glyph height within one
+  # printed line. Machine printing is uniform; a retyped line is not.
+  glyph_height_cv: 0.22
+
+  # Ghost portrait: structural correlation between the faded reprint and the
+  # printed photograph, after equalising both. A genuine pair is one photograph
+  # printed twice, so it correlates strongly; a swapped portrait does not.
+  # Measured, not guessed - see data/TAMPERING.md.
+  ghost_agreement_min: 0.90
+
+  # Layout: robust-z of a field's centre against the reference distribution
+  # built from labelled genuine cards by data/tools/build_layout.py.
+  layout_mad: 5.0
+
+# Retention. TECHNICAL-SPEC.md section 9: raw face crops do not survive the
+# session TTL, and MinIO holds document images with a session TTL for audit.
+# There is no MinIO here and no background job - eviction is opportunistic, on
+# the next request that touches the map, which is enough for a single-counter
+# process and needs no scheduler to go wrong at 3am.
+#
+# What expires is only the RAW CAPTURE. The screening event, its full signal
+# list and the face embedding are the audit trail and are kept - a decision
+# challenged months later has to be re-scorable (CONTEXT.md section 3).
+retention:
+  # Long enough for an officer to be interrupted mid-screening and come back,
+  # short enough that a busy shift does not accumulate a gigabyte of scans.
+  pending_seconds: 900
+  # Cross-document propagation only matters while the traveller is at the
+  # counter. After this a new session starts, which is the honest behaviour -
+  # stale priors quietly vouching for a stranger is the failure to avoid.
+  session_seconds: 3600
+
+# The VLM fallback. TECHNICAL-SPEC.md section 4.
+vlm:
+  # Hard ceiling. "An unbounded fallback will hang the demo" - the spec is
+  # blunt about it, and the loop checks the deadline between decoded tokens so
+  # it actually stops rather than merely intending to.
+  timeout_seconds: 8.0
+
+  # What a fallback read is worth. Greedy decoding gives no calibrated score, so
+  # inventing one per read would be a number with nothing behind it. Fixed and
+  # modest: the trust class does the real work - `unverified` output cannot
+  # carry a document to GREEN on its own whatever this says.
+  confidence: 0.5
+
+  # Fire when OCR read a field this faintly. Above `ocr.MIN_CONFIDENCE` (0.55)
+  # the read is used as-is; below this the fallback is worth its 8 seconds.
+  low_confidence_below: 0.55
+
+  # What share of the fields OCR actually attempted must come back unreadable
+  # before the fallback is worth its 8 seconds. This was effectively 0 - any
+  # single unread field fired it - which spent Florence-2 on documents that had
+  # been read perfectly well apart from one faint line. Measured at that
+  # setting: 42% of driving-licence runs fell through, p95 6,167 ms against a
+  # 1,020 ms budget. A third is "the reader is not working on this document"
+  # rather than "one field is smudged". A card where the detector located
+  # nothing at all still falls through unconditionally - see
+  # modules/extraction/__init__.py:_fallback.
+  fallback_unread_frac: 0.34

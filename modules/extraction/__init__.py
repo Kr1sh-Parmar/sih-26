@@ -17,12 +17,14 @@ without them until they are trained - every declared text field falls back to
 an `inconclusive` signal. The coverage floor then turns the verdict AMBER:
 nothing was read, so nothing disagreed, and that must not be a pass (D9).
 
-The VLM fallback (Florence-2) is still a stub.
+The MRZ is the exception: ICAO fixes its position, so it is read from the
+foot of the page without a detector. The VLM fallback (Florence-2) covers
+the documents that have no MRZ - and stands down on the ones that do (D45).
 """
 import time
 
 from core.canonical import FIELD_ORDER
-from core.profiles import field_label
+from core.profiles import field_label, load_config
 from core.quality import check as quality_check
 from core.registry import FIELD_DETECTOR, available
 from fusion.context import NormalizedField, ScreeningContext
@@ -115,9 +117,205 @@ def run(ctx: ScreeningContext, *, uploaded: bool = False,
     signals += detect.run(ctx)
     if ctx.field_boxes:
         signals += ocr.run(ctx)
+    # Independent of what the detector located, not an else-branch. The detector
+    # locates the machine-readable zone on some passports and not others; when it
+    # misses, `ctx.field_boxes` is still non-empty because it found the name, and
+    # gating this on emptiness cost the passport its five ICAO check digits and
+    # dropped it into the eight-second fallback instead. The zone's position is
+    # fixed by standard - it is readable whether or not a learned model proposed
+    # a box for it. Self-guards on `mrz` already being read.
+    signals += _mrz_from_its_fixed_position(ctx)
 
+    signals += _fallback(ctx, signals)
     signals += _unread_fields(ctx)
     return signals
+
+
+#: ICAO 9303 puts the machine-readable zone in a fixed band at the foot of the
+#: data page. That is a published layout, not a guess, and it is the one field on
+#: any of these documents whose position is specified by an international
+#: standard rather than by a national design.
+MRZ_BAND_TOP = 0.75
+
+
+def _mrz_from_its_fixed_position(ctx: ScreeningContext) -> list[Signal]:
+    """Read the MRZ without a detector, from where the standard says it is.
+
+    This was written because the detector was the long pole - it trained on a
+    GPU elsewhere, and until it landed `ctx.field_boxes` was empty and nothing
+    was read off any document. The detector is deployed now and this path still
+    runs, because the reason it is good was never the detector's absence: the
+    MRZ does not need a learned detector to be found - ICAO fixes it at the
+    bottom of the page - and it is the single most valuable field on a passport,
+    because it is the only one on any of these six document types whose
+    correctness is verifiable arithmetically.
+
+    Measured, and this is why it is no longer an else-branch: the deployed
+    detector proposes an `mrz` box on 70% of the passports in its own test split
+    and on none of the generated renders. Gating this on `field_boxes` being
+    empty meant a detector that found the name and missed the zone took the
+    passport's five ICAO check digits away and dropped it into the eight-second
+    fallback instead.
+
+    Reading it here switches on all five ICAO check digits in Layer A and the
+    whole VIZ/MRZ cross-check in Layer C, both already written and tested.
+
+    **The read is self-tested, and that is the load-bearing part.** Measured over
+    30 generated passports this path reads 70% of them character-exact; the rest
+    produce a well-formed 44-character strip with a wrong character in it. Handed
+    straight to Layer A those fail a check digit, and a failed composite check
+    digit is a hard fail - so a fifth of genuine passports would be detained on
+    an OCR error. PP-OCR's confidence does not separate the two: the misreads
+    scored *higher* on average (0.791 median) than the exact reads (0.751).
+
+    So the ICAO check digits are used here as a **test of the read** before the
+    strip is stored, rather than as a verdict about the document. If they fail,
+    the honest statement is that the zone could not be read reliably, not that it
+    was altered - because with a reader this accurate, a failure is far more
+    likely a misread than a forgery.
+
+    The cost is stated plainly: **this path can confirm a good machine-readable
+    zone and can never report a tampered one.** That is a real loss, and it is
+    smaller than the alternative, because the zone would otherwise not be read
+    at all. That cost is only paid on this path: `_read_mrz_field` - the
+    detector-fed path, which runs whenever the detector does propose an `mrz`
+    box - is a tight crop and a different accuracy regime, and it deliberately
+    keeps the geometry gate alone so that forgery detection survives there.
+    """
+    if "mrz" not in ctx.profile["extract"]["detector_classes"]:
+        return []
+    if "mrz" in ctx.fields:
+        return []
+
+    image = ctx.warped if ctx.warped is not None else ctx.image
+    height = image.shape[0]
+    band = image[int(height * MRZ_BAND_TOP):, :]
+    box = (0, int(height * MRZ_BAND_TOP), image.shape[1], height)
+
+    started = time.perf_counter()
+    strip, confidence, reason = ocr.read_mrz(band)
+    ms = int((time.perf_counter() - started) * 1000)
+    sid = "extraction.ocr.mrz.confidence"
+
+    if strip is None:
+        return [Signal(
+            id=sid, module="extraction", tier=1, verdict="inconclusive",
+            confidence=0.0, trust_class="probabilistic", hard_fail=False,
+            anchor="field:mrz",
+            evidence=f"{reason[:1].upper()}{reason[1:]}", region=box,
+            latency_ms=ms,
+        )]
+
+    if not _check_digits_verify(strip):
+        return [Signal(
+            id=sid, module="extraction", tier=1, verdict="inconclusive",
+            confidence=0.0, trust_class="probabilistic", hard_fail=False,
+            anchor="field:mrz",
+            evidence="The machine-readable zone was located but could not be "
+                     "read reliably - its own check digits do not agree with "
+                     "the characters read. Re-capture at a higher resolution.",
+            region=box, latency_ms=ms,
+        )]
+
+    ctx.fields["mrz"] = NormalizedField(raw=strip, value="", source="mrz",
+                                        confidence=confidence, box=box)
+    lines = strip.splitlines()
+    return [Signal(
+        id=sid, module="extraction", tier=1, verdict="pass",
+        confidence=confidence, trust_class="probabilistic", hard_fail=False,
+        anchor="field:mrz",
+        evidence=f"Read the machine-readable zone from its standard position at "
+                 f"the foot of the page, {len(lines)} lines of {len(lines[0])} "
+                 f"characters, confidence {confidence * 100:.0f}%",
+        region=box, latency_ms=ms,
+    )]
+
+
+def _check_digits_verify(strip: str) -> bool:
+    """Do the strip's own ICAO check digits agree with the characters read?
+
+    Used as a self-test on an untargeted read, never as a verdict. See
+    `_mrz_from_its_fixed_position`.
+    """
+    from modules.extraction import mrz as mrz_parser
+
+    try:
+        parsed = mrz_parser.parse(strip)
+    except mrz_parser.MRZError:
+        return False
+    if not parsed.check_digits:
+        return False
+    return all(mrz_parser.verify(value, digit)
+               for value, digit in parsed.check_digits.values())
+
+
+def _fallback(ctx: ScreeningContext, so_far: list[Signal]) -> list[Signal]:
+    """Florence-2, when the normal path did not read the document.
+
+    Two triggers. The documented one is a field OCR located and read too
+    faintly to rely on. The one that matters today is the other: with no
+    detector weights `ocr.run` never runs at all, so *nothing* is read, and
+    `<OCR_WITH_REGION>` is the only reader left that does not need a field box
+    to aim at.
+
+    It fires at most once per document. Eight seconds is the ceiling and this
+    is the fallback, not a second opinion - running it per unread field would
+    multiply that by however many fields were unreadable.
+
+    **It does not fire at all once the machine-readable zone has been read.**
+    That is a later addition and it is the largest latency win in the module:
+    a verified MRZ already carries surname, given names, document number,
+    nationality, date of birth, sex and expiry, each with its own ICAO check
+    digit - every field the VLM could offer, at `arithmetic` trust instead of
+    `unverified`, in about two seconds instead of seven. Running Florence-2
+    afterwards spends the remaining budget re-reading fields we hold better,
+    on exactly the documents already sitting against the 8 s ceiling.
+
+    What that costs is real and small: the few printed fields a TD3 does not
+    carry - a passport prints the father's name, the MRZ does not. Those reads
+    would arrive `unverified`, which `COMPARABLE_SOURCES` already bars from
+    contradicting the MRZ or a signed payload (D37), so they were evidence
+    rather than verification. Seven seconds is too much to pay for that.
+    """
+    from modules.extraction import vlm
+
+    if "mrz" in ctx.fields:
+        # `_mrz_from_its_fixed_position` only stores the strip once its own
+        # check digits agree, so this is a verified read, not merely a read.
+        return [Signal(
+            id="extraction.vlm.ratified", module="extraction", tier=1,
+            verdict="not_applicable", confidence=1.0, trust_class="arithmetic",
+            hard_fail=False, anchor="document",
+            evidence="The fallback reader was not needed - the machine-readable "
+                     "zone was read from its standard position and supplies "
+                     "these fields with their own check digits",
+        )]
+
+    nothing_located = not ctx.field_boxes
+    # No trailing dot on the prefix, deliberately: the contract guard in
+    # tests/test_contracts.py scans the source for anything shaped like a signal
+    # id, and a prefix ending in a dot reads as one that was never registered.
+    attempted = [s for s in so_far if s.id.startswith("extraction.ocr")]
+    unread = [s for s in attempted if s.verdict == "inconclusive"]
+
+    # A *share* of the attempted reads, not any single one. This fired on one
+    # faint field out of three read cleanly, and that cost eight seconds of
+    # Florence-2 and 1.4 GB resident to re-read fields already in hand -
+    # measured at 42% of driving-licence runs, which was most of what kept that
+    # document type over budget. The question the fallback answers is "did the
+    # reading path work on this document", and one bad field out of several is
+    # not that. `nothing_located` is untouched and still fires unconditionally:
+    # a card the detector cannot see at all has no reading path to judge.
+    share = len(unread) / len(attempted) if attempted else 0.0
+    floor = load_config("thresholds")["vlm"].get("fallback_unread_frac", 0.0)
+    if not (nothing_located or (unread and share >= floor)):
+        return []
+
+    reason = ("nothing was located on the document - the field detector found "
+              "no fields to read" if nothing_located else
+              f"{len(unread)} of {len(attempted)} located field(s) could not "
+              f"be read")
+    return vlm.run(ctx, reason=reason)
 
 
 def _doctype(ctx: ScreeningContext, declared: bool) -> list[Signal]:

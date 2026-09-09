@@ -85,12 +85,28 @@ def build_findings(signals: list[Signal], field_boxes: dict | None = None) -> li
     findings = []
     for anchor, members in groups.items():
         lead = _dominant(members)
+        # The class of the evidence that drives the CLAIM, not of the strongest
+        # signal that happens to share the anchor.
+        #
+        # It used to be the strongest class present. So a clean cryptographic
+        # pass sharing an anchor with a failing tamper heuristic produced a
+        # finding labelled `cryptographic` whose headline was the heuristic -
+        # a guess wearing the authority of a signature, which is the exact
+        # failure this system exists to prevent.
+        #
+        # It also disabled crypto precedence outright: that finding landed in
+        # the cryptographic set carrying severity, so `any(severity > 0)` was
+        # true and nothing was ever suppressed. The rule could not fire in the
+        # one situation it was written for.
+        #
+        # Same pool as `_dominant`, so the headline and the class an officer
+        # reads beside it can no longer disagree.
+        failing = [m for m in members if m.verdict == "fail"]
         findings.append(Finding(
             anchor=anchor,
             severity=group_severity(members),
-            # Strongest class present. A cryptographic member makes the whole
-            # finding cryptographic, which is what drives the precedence rule.
-            trust_class=min((m.trust_class for m in members), key=trust_rank),
+            trust_class=min((m.trust_class for m in (failing or members)),
+                            key=trust_rank),
             # ponytail: headline is the dominant signal's evidence. Those strings
             # are already written for an officer to read; a separate headline
             # table would be a second place to keep the same sentence correct.

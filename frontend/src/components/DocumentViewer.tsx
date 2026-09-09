@@ -21,6 +21,13 @@ interface Props {
   docType: string;
   canvas: [number, number];
   fields: { name: string; value: string; region: Region | null }[];
+  /** The capture itself, when there is one to show.
+   *
+   *  A replayed fixture has no image and falls back to the drawn specimen; a
+   *  document the officer actually put on the glass has one, and showing them
+   *  a passport drawing while they screen an Aadhaar is the kind of detail
+   *  that makes a working system look broken. */
+  imageSrc?: string | null;
   signals: Signal[];
 }
 
@@ -41,7 +48,7 @@ function regionsByAnchor(signals: Signal[], fields: Props["fields"]) {
   return map;
 }
 
-export function DocumentViewer({ docType, canvas, fields, signals }: Props) {
+export function DocumentViewer({ docType, canvas, fields, signals, imageSrc }: Props) {
   const activeAnchor = useScreening((s) => s.activeAnchor);
   const setActiveAnchor = useScreening((s) => s.setActiveAnchor);
   const reduce = useReducedMotion();
@@ -56,7 +63,15 @@ export function DocumentViewer({ docType, canvas, fields, signals }: Props) {
   return (
     <div className="relative bg-intaglio p-5">
       <div className="relative mx-auto max-h-[46vh]" style={{ aspectRatio: `${w} / ${h}`, maxWidth: `calc(46vh * ${w} / ${h})` }}>
-        <Specimen docType={docType} fields={values} />
+        {imageSrc ? (
+          <img
+            src={imageSrc}
+            alt="The document as captured"
+            className="absolute inset-0 h-full w-full object-contain"
+          />
+        ) : (
+          <Specimen docType={docType} fields={values} />
+        )}
 
         <svg
           viewBox={`0 0 ${w} ${h}`}
@@ -97,8 +112,9 @@ export function DocumentViewer({ docType, canvas, fields, signals }: Props) {
       </div>
 
       <p className={cn("mt-4 text-label", "text-bloom/70")}>
-        Drawn specimen. The generator has not produced templates yet, so no real
-        document appears anywhere in this repository.
+        {imageSrc
+          ? "The capture as screened. Every document here is generated \u2014 no real identity document appears anywhere in this repository."
+          : "Drawn specimen. This is a replayed case, not a capture \u2014 no real document appears anywhere in this repository."}
       </p>
     </div>
   );

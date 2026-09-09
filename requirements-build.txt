@@ -1,0 +1,17 @@
+# BUILD TIME ONLY. Never installed into the screening image.
+#
+# requirements.txt is what the Docker image gets, and tests/test_offline.py
+# fails if anything under api/ core/ fusion/ modules/ imports a package that
+# can reach the network. Everything here is used by data/ and scripts/ - the
+# synthetic generator, the dataset tools and the model fetchers - and none of
+# it is importable from the screening path.
+#
+#   pip install -r requirements-build.txt
+#
+# Training deps (ultralytics, CUDA torch) are not here either. They live in
+# .venv-train - see MODEL-TRAINING.md.
+
+Pillow>=10,<12      # real typefaces and Devanagari. cv2.putText has neither:
+                    # Hershey stroke fonts only, and no Indic shaping at all.
+Faker>=25,<40       # en_IN identities. DATA.md names it.
+requests>=2.31      # data/tools/pull_*.py, already used

@@ -18,6 +18,32 @@ MODELS = ROOT / "models"
 
 FIELD_DETECTOR = "field_detector_22cls"
 
+#: Face models, fetched by scripts/fetch_face_models.py at build time. Absent is
+#: a normal state and every caller degrades to `inconclusive`, same as the field
+#: detector.
+FACE_DETECTOR = "face_detector"
+FACE_EMBEDDING = "face_embedding"
+LIVENESS = "face_liveness"
+
+#: Florence-2, the VLM fallback. Deliberately absent from `warm()`: it is four
+#: graphs and 275 MB, it takes the warm footprint from about 450 MB to 910 MB,
+#: and 85% of documents never reach it (TECHNICAL-SPEC.md section 4). It loads
+#: on the first document that actually needs it, which is the one place in this
+#: system where a cold session on the critical path is the right trade.
+FLORENCE = "florence2"
+
+#: Devanagari recognition. RapidOCR bundles `ch_PP-OCRv4_rec_infer.onnx`, whose
+#: dictionary is Chinese and Latin - fed Devanagari it returns an empty string
+#: at confidence 0.00 (measured; see data/EXTRACTION.md). Empty is the *safe*
+#: failure - it becomes `inconclusive` rather than a wrong value - but it means
+#: the `ocr_lang: [en, hi]` that `aadhaar`, `voter_id` and `dl` declare is only
+#: half true, which is the debt D24 records.
+#:
+#: Two files, not one: a PP-OCR recogniser is a graph plus its character
+#: dictionary, and the graph alone decodes to nonsense. Fetch both with
+#: `scripts/fetch_ocr_models.py`.
+DEVANAGARI_REC = "rec_devanagari"
+
 #: More threads is not faster on models this small - the split costs more than
 #: it saves, and the box is also serving a websocket. Override per deployment.
 THREADS = int(os.environ.get("SCREENING_ORT_THREADS", "4"))
@@ -69,6 +95,10 @@ def session(name: str):
     options.intra_op_num_threads = THREADS
     options.inter_op_num_threads = 1
     options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    # Errors only. SCRFD is traced at a fixed input size and run at another, so
+    # every detection prints nine harmless shape warnings - which would bury a
+    # real message in the demo console.
+    options.log_severity_level = 3
     return ort.InferenceSession(str(path), options,
                                 providers=["CPUExecutionProvider"])
 
@@ -77,23 +107,62 @@ def available(name: str) -> bool:
     return model_path(name) is not None
 
 
-@lru_cache(maxsize=1)
-def ocr_engine():
+def devanagari_rec() -> tuple[Path, Path] | None:
+    """The Devanagari recogniser and its dictionary, or None if not deployed."""
+    graph = MODELS / f"{DEVANAGARI_REC}.onnx"
+    keys = MODELS / f"{DEVANAGARI_REC}.txt"
+    return (graph, keys) if graph.exists() and keys.exists() else None
+
+
+@lru_cache(maxsize=4)
+def ocr_engine(lang: str = "en"):
     """RapidOCR: PP-OCRv4 detection, classification and recognition on ONNX.
 
-    The models ship inside the wheel (16 MB, three files), so nothing is
+    The default models ship inside the wheel (16 MB, three files), so nothing is
     fetched at runtime and the offline claim survives the cable being pulled.
+
+    `lang="hi"` swaps only the *recogniser* - detection and angle classification
+    are script-agnostic, and rebuilding them would cost two more sessions to do
+    the same job. Falls back to the bundled recogniser when the Devanagari model
+    is not deployed, which is the current state; the caller is expected to have
+    checked `devanagari_rec()` and to say so in its evidence rather than
+    silently reading Hindi with a Latin dictionary.
     """
     from rapidocr_onnxruntime import RapidOCR
 
+    if lang == "hi":
+        deployed = devanagari_rec()
+        if deployed:
+            graph, keys = deployed
+            return RapidOCR(intra_op_num_threads=THREADS,
+                            rec_model_path=str(graph), rec_keys_path=str(keys))
     return RapidOCR(intra_op_num_threads=THREADS)
+
+
+def _version(name: str) -> str | None:
+    """`<source>@<hash>` for the audit log, or None when genuinely not deployed."""
+    meta = metadata(name)
+    if not meta:
+        return None
+    # Florence-2 is four graphs behind one sidecar, so `available()` - which
+    # looks for `<name>.onnx` - is the wrong question for it.
+    graphs = meta.get("graphs")
+    if graphs:
+        if not all(available(g) for g in graphs):
+            return None
+    elif not available(name):
+        return None
+    label = meta.get("source") or meta.get("name", name)
+    return f"{label}@{meta.get('sha256', '')[:12]}"
 
 
 def versions() -> dict:
     """What actually ran, for the audit log.
 
     A screening event has to say which models produced it or it cannot be
-    honestly re-scored later. `None` means the model is genuinely not deployed.
+    honestly re-scored later. `None` means the model is genuinely not deployed -
+    these were hardcoded `None` while the face module was a stub, which would
+    have kept claiming no face model was deployed long after one was.
     """
     detector = metadata(FIELD_DETECTOR)
     return {
@@ -102,8 +171,14 @@ def versions() -> dict:
             f"@{detector.get('sha256', '')[:12]}" if detector else None
         ),
         "ocr": _ocr_version(),
-        "face_embedding": None,
-        "liveness": None,
+        "ocr_devanagari": (
+            f"{DEVANAGARI_REC}@{devanagari_rec()[0].stat().st_size}"
+            if devanagari_rec() else None
+        ),
+        "face_detector": _version(FACE_DETECTOR),
+        "face_embedding": _version(FACE_EMBEDDING),
+        "liveness": _version(LIVENESS),
+        "vlm": _version(FLORENCE),
         "pipeline": "spine-1",
     }
 
@@ -124,11 +199,12 @@ def warm() -> dict:
     """
     loaded, missing = [], []
 
-    if available(FIELD_DETECTOR):
-        session(FIELD_DETECTOR)
-        loaded.append(FIELD_DETECTOR)
-    else:
-        missing.append(FIELD_DETECTOR)
+    for name in (FIELD_DETECTOR, FACE_DETECTOR, FACE_EMBEDDING, LIVENESS):
+        if available(name):
+            session(name)
+            loaded.append(name)
+        else:
+            missing.append(name)
 
     try:
         engine = ocr_engine()

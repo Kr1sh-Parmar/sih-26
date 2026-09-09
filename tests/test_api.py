@@ -67,9 +67,15 @@ def test_health_reports_what_is_actually_deployed(client):
     body = client.get("/health").json()
     assert body["status"] == "ok"
     assert body["trust_anchors"] == 1
-    # No learned model is deployed yet and the API says so rather than
-    # implying otherwise.
-    assert body["models"]["field_detector"] is None
+    # The version string tracks the weights on disk, in both directions. It was
+    # hardcoded to None while the detector was training elsewhere, which would
+    # have kept the audit log claiming no detector ran long after one did.
+    from core import registry
+    reported = body["models"]["field_detector"]
+    if registry.available(registry.FIELD_DETECTOR):
+        assert reported and reported.startswith(registry.FIELD_DETECTOR)
+    else:
+        assert reported is None
 
 
 def test_profile_endpoint_matches_the_console_contract(client):
@@ -247,3 +253,140 @@ def test_session_endpoint_lists_what_was_screened(client):
 
     body = client.get("/sessions/multi").json()
     assert len(body["documents"]) == 2
+
+
+def test_a_liveness_burst_is_accepted_and_reaches_the_blink_check(client):
+    """The transport half of active liveness.
+
+    `live_frames` is a repeated multipart field. If FastAPI ever stops binding
+    it to a list the frames arrive as one item and the burst silently becomes
+    too short to judge - which reads as `inconclusive` and would look like the
+    check merely being cautious rather than the wiring being broken.
+    """
+    import numpy as np, cv2
+    doc = cv2.imencode(".png", np.full((800, 1200, 3), 220, np.uint8))[1].tobytes()
+    frame = cv2.imencode(".jpg", np.full((720, 1280, 3), 180, np.uint8))[1].tobytes()
+
+    files = [("image", ("a.png", doc, "image/png")),
+             ("live", ("live.jpg", frame, "image/jpeg"))]
+    files += [("live_frames", (f"f{i}.jpg", frame, "image/jpeg")) for i in range(5)]
+
+    started = client.post("/screen", files=files,
+                          data={"doc_type": "pan", "session_id": "burst"})
+    assert started.status_code == 200, started.text
+
+    from api.main import PENDING
+    ctx = PENDING[started.json()["id"]]["ctx"]
+    assert len(ctx.faces["live_frames"]) == 5, ctx.faces.keys()
+    assert ctx.faces["live"] is not None
+
+
+def test_a_corrupt_burst_frame_is_a_clear_error_not_a_crash(client):
+    import numpy as np, cv2
+    doc = cv2.imencode(".png", np.full((800, 1200, 3), 220, np.uint8))[1].tobytes()
+    files = [("image", ("a.png", doc, "image/png")),
+             ("live_frames", ("f0.jpg", b"not an image", "image/jpeg"))]
+    r = client.post("/screen", files=files,
+                    data={"doc_type": "pan", "session_id": "burst2"})
+    assert r.status_code == 400
+    assert "burst" in r.json()["detail"]
+
+
+def test_a_captured_document_is_screened_over_the_real_socket(client):
+    """The console path, end to end: capture -> POST /screen -> socket -> verdict.
+
+    Until now `/screen` was reachable but nothing called it - the console
+    replayed server-side fixtures, so this endpoint's own contract was only
+    exercised piecemeal. `Screening.tsx` now posts a real capture here, so the
+    whole sequence the officer triggers has to hold together: the id claimed,
+    the document bundle fetched for the viewer, and a verdict off the socket.
+    """
+    import numpy as np, cv2
+    doc = cv2.imencode(".png", np.full((800, 1200, 3), 220, np.uint8))[1].tobytes()
+    frame = cv2.imencode(".jpg", np.full((720, 1280, 3), 180, np.uint8))[1].tobytes()
+
+    files = [("image", ("capture.jpg", doc, "image/jpeg")),
+             ("live", ("live.jpg", frame, "image/jpeg"))]
+    files += [("live_frames", (f"burst-{i}.jpg", frame, "image/jpeg"))
+              for i in range(5)]
+
+    started = client.post("/screen", files=files,
+                          data={"doc_type": "aadhaar", "session_id": "counter",
+                                "uploaded": "false"})
+    assert started.status_code == 200, started.text
+    screening_id = started.json()["id"]
+
+    # The viewer fetches this before the socket opens; it must describe the
+    # captured document, not a fixture.
+    bundle = client.get(f"/screen/{screening_id}/doc").json()
+    assert bundle["meta"]["doc_type"] == "aadhaar"
+    assert bundle["meta"]["scene"] == "live capture"
+
+    with client.websocket_connect(f"/screen/{screening_id}") as socket:
+        messages = drain(socket)
+    verdict = next(m for m in messages if m["type"] == "verdict")
+    assert verdict["band"] in ("GREEN", "AMBER", "RED")
+
+    # The blink check ran in tier 2, or reported honestly that it did not.
+    # Either way it must never come back as a bare pass on a blank frame.
+    active = [m for m in messages
+              if m["type"] == "signal" and m["signal"]["id"] == "face.liveness.active"]
+    for m in active:
+        assert m["signal"]["verdict"] in ("inconclusive", "pass", "not_applicable")
+
+
+def test_every_event_from_a_real_document_survives_json(client):
+    """The test that was missing, and the bug it would have caught.
+
+    Every other socket test in this file screens a blank or synthetic image, so
+    the detector finds nothing, no signal carries a `region`, and the wire form
+    is trivially serialisable. Screen a document the detector can actually read
+    and the regions appear - and for a while they arrived as `np.float32`,
+    because NumPy 2 keeps float32 through a division by a Python float where
+    1.x widened to float64. `json.dumps` refuses those, so **every screening of
+    a real document died** with "Object of type float32 is not JSON
+    serializable" while this suite stayed green.
+
+    It only reproduced in the Docker image, which resolved NumPy 2.4.6 against
+    the old `numpy>=1.26,<3` range while the host had 1.26.4. The version is
+    pinned now and the coordinates are cast at the source, but the reason this
+    test exists is that neither fix is visible from a passing assertion
+    elsewhere: the contract is that what the pipeline emits can be *sent*.
+    """
+    import json
+    from pathlib import Path
+
+    import pytest as _pytest
+    from core import registry
+
+    sample = registry.ROOT / "var" / "demo" / "gen_pan.png"
+    if not sample.exists():
+        _pytest.skip("var/demo/gen_pan.png is not on disk")
+    if not registry.available(registry.FIELD_DETECTOR):
+        _pytest.skip("the field detector is not deployed, so no region is emitted")
+
+    started = client.post(
+        "/screen",
+        files={"image": ("gen_pan.png", sample.read_bytes(), "image/png")},
+        data={"doc_type": "pan", "session_id": "json-contract"})
+    assert started.status_code == 200, started.text
+
+    with client.websocket_connect(f"/screen/{started.json()['id']}") as socket:
+        messages = drain(socket)
+
+    assert not [m for m in messages if m["type"] == "error"], [
+        m["message"] for m in messages if m["type"] == "error"]
+
+    # The socket already serialised these, so reaching here proves the contract.
+    # Re-encoding makes the failure name the offending field rather than showing
+    # up as a missing verdict.
+    for message in messages:
+        json.dumps(message)
+
+    regions = [m["signal"]["region"] for m in messages
+               if m["type"] == "signal" and m["signal"].get("region")]
+    assert regions, "no region was emitted; this test would prove nothing"
+    for region in regions:
+        assert all(type(v) is float for v in region), (
+            f"a region coordinate is {[type(v).__name__ for v in region]}, "
+            f"not plain floats - see modules/extraction/detect.py")

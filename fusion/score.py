@@ -57,8 +57,47 @@ def coverage(signals: list[Signal], profile: dict) -> float:
     return sum(weight_for(profile, s.id) for s in ran) / total
 
 
+#: Checks that compare a signature against ink. A *passing* one of these is the
+#: only thing that earns a field its suppression.
+#:
+#: No trailing dot on either prefix, deliberately: the contract guard in
+#: tests/test_contracts.py scans the source for anything shaped like a signal
+#: id, and a prefix ending in a dot reads as one that was never registered.
+CONFIRMING = ("validation.signed", "validation.crossdoc")
+
+
+def confirmed_fields(signals: list[Signal]) -> set[str]:
+    """Fields where a signature was actually checked against what is printed.
+
+    Not "fields the payload mentions". That was the old rule and it was the
+    same mistake the VIZ/MRZ check made: a signature proves the payload, and
+    says nothing about the ink until someone compares the two.
+
+    Under the old rule a genuine signed card whose printed date of birth had
+    been altered - QR untouched, so the signature still verified - had its
+    `tamper.physical.font_consistency` finding suppressed as noise, because
+    `field:dob` appeared in the payload. That check exists precisely to catch
+    reprinting, and the suppression removed it on exactly the documents it was
+    built for.
+
+    A field earns suppression by being *corroborated*: read off the card and
+    found to agree with a signature. Then an ELA hotspot over it really is
+    recompression noise. Absent that, the probabilistic evidence is the only
+    evidence about the ink and it has to survive.
+    """
+    return {
+        s.anchor for s in signals
+        if s.verdict == "pass" and s.anchor.startswith("field:")
+        and s.id.startswith(CONFIRMING)
+    }
+
+
 def apply_crypto_precedence(findings: list[Finding], signed_fields: set[str]) -> list[Finding]:
-    """An ELA hotspot over a cryptographically signed date of birth is noise.
+    """An ELA hotspot over a *corroborated* date of birth is noise.
+
+    `signed_fields` must come from `confirmed_fields()` - fields where print and
+    signature were compared and agreed. Passing the whole payload's field set
+    here suppresses the evidence for a retyped card; see that docstring.
 
     Only fires when every cryptographic finding is clean. One failing signature
     and the probabilistic evidence is exactly what the officer needs.

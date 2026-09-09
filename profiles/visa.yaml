@@ -29,6 +29,9 @@ hard_fail:
   - validation.watchlist.hit
   - validation.signature.valid
   - validation.crossdoc.dob_mismatch
+  # The card disagreeing with the signature it carries. One physical
+  # document, and the payload is proven - so the printing is the lie.
+  - validation.signed.*
 
 weights:
   validation.signature.valid:   0.25
@@ -36,6 +39,7 @@ weights:
   validation.vizmrz.*:          0.20
   tamper.stamp.*:               0.15
   face.match.cosine:            0.10
+  face.*:                       0.10
   validation.*:                 0.10
   tamper.*:                     0.05
   extraction.*:                 0.05

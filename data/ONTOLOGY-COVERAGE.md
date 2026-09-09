@@ -6,7 +6,22 @@ Every dataset is remapped onto the frozen 22-class ontology
 (`TECHNICAL-SPEC.md` §5) so that **one** detector covers all six document
 types (D17). Source class names never reach the model.
 
-## Where we stand: 18 of 22 classes covered (was 11)
+## Where we stand: 21 of 22 classes covered
+
+**Four of those come from the generator, not from any dataset.** `ghost_photo`,
+`barcode`, `hologram` and `doc_title` had zero instances in every scraped
+source, which is why the detector could not learn them and why
+`tamper.physical.ghost_missing` was blocked on a class that never appears.
+`data/generator/` draws all four, and the label falls out of having drawn it.
+
+Regenerate with `python data/tools/generate_documents.py --count 200`; merge
+with `build_field_dataset.py`, which reads `data/processed/generated/` in the
+same layout as the scraped sets.
+
+Only `logo` is still generator-free, and it does not need to be: it has 144
+real instances from Aadhaar.
+
+### Scraped sources: 18 of 22
 
 | Class | Instances | train / valid / test | Source |
 |---|---|---|---|

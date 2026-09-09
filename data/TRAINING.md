@@ -16,7 +16,7 @@ Regenerate the dataset with `data/tools/build_field_dataset.py`; retrain with
 | | |
 |---|---|
 | **State** | running — started 2026-09-06, 100 epochs |
-| **Result** | pending, see [Results](#results) |
+| **Result** | deployed 2026-09-09, see [Results](#results) — 0.926 recall on its own test split, 0.142 on generated cards (D51) |
 
 ---
 
@@ -117,19 +117,89 @@ fetched at runtime.
 
 ## Results
 
-*Pending — this section is filled in when the run completes.*
+Trained on an external GPU, exported and deployed 2026-09-09.
 
-What goes here: mAP50 and mAP50-95 on the held-out **test** split, per-class
-precision and recall for the 18 classes that have data, measured CPU latency of
-the exported int8 model at 640, and the model hash.
+```
+field_detector_22cls.int8.onnx   9.88 MB   int8, imgsz 640
+sha256  d8baab1d46aedaac0ab3c572780b8e54780a6d8595c65e787549f7fb3c1b3c55
+```
 
-Two honesty rules for whatever number lands here:
+### What the training run reported
+
+| | |
+|---|---|
+| precision (B) | 0.643 |
+| recall (B) | 0.906 |
+| mAP50 (B) | 0.766 |
+| mAP50-95 (B) | 0.541 |
+
+### What the shipped artefact actually does
+
+The numbers above describe the `.pt` inside ultralytics. What screens documents
+is the int8 ONNX read through `modules/extraction/detect.py` — letterboxing,
+NMS, the YOLO head decode. `data/tools/eval_detector.py` measures *that*, on the
+held-out test split, at IoU 0.5:
+
+```
+OVERALL   recall 0.926   3788 / 4089 instances over 1012 images
+```
+
+Consistent with the run's 0.906, which settles a question the sidecar cannot:
+the export, the quantisation and the decoder are correct end to end. A
+transposed head or a bad quantisation would have collapsed here.
+
+Per document type, test split:
+
+| | recall | | | recall |
+|---|---|---|---|---|
+| visa | 1.000 | | aadhaar | 0.848 |
+| pan | 0.981 | | dl | 0.855 |
+| passport | 0.980 | | voter_id | 0.936 |
+
+Per class, for the classes that have data — precision is not reported per class
+for the reason in rule 2 below:
+
+| class | recall | | class | recall |
+|---|---|---|---|---|
+| issue_date | 0.993 | | address | 0.942 |
+| expiry_date | 0.983 | | dob | 0.934 |
+| id_number | 0.981 | | father_name | 0.922 |
+| nationality | 0.979 | | person_photo | 0.796 |
+| gender | 0.978 | | issuing_authority | 0.732 |
+| name | 0.966 | | qr_code | 0.667 |
+| mrz | 0.700 | | emblem | 0.570 |
+
+`mrz` at 0.700 over 20 instances is the one that matters operationally, and it
+is why the fixed-position MRZ read still runs alongside the detector rather than
+as its fallback — see `modules/extraction/__init__.py`.
+
+### The number that is not in the training report
+
+```
+data/processed/generated/*   recall 0.142   197 / 1386 instances
+```
+
+**Zero generated cards are in the training split**, and the demo, the rehearsal
+and every screenshot run on generator renders. Per type on that set: passport
+0.042, voter_id 0.051, visa 0.136, dl 0.162, pan 0.370. This is a domain gap,
+not an export fault — the same artefact scores 0.926 on the domain it was
+trained for. Full reasoning, what was tried, and why retraining was declined:
+**D51** in `context/DECISIONS.md`.
+
+Quote both numbers or neither.
+
+### Two honesty rules, and how this section keeps them
 
 1. **Report the test split, not the validation split.** Validation drove early
    stopping, so quoting it is quoting the number the run optimised against.
+   Every figure above is the test split.
 2. **No per-class figure for the four empty classes or the four thin ones.**
-   A class with 25 instances from one source produces a number that means
-   nothing, and a panel that asks where it came from will find that out.
+   `ghost_photo`, `barcode`, `hologram` and `doc_title` have zero instances and
+   hold their index only to keep the class order stable — the detector cannot
+   have learned them and must not be quoted on them. `signature` (1 test
+   instance), `blood_group` (6), `secondary_id` (4) and `logo` (13) are too thin
+   to mean anything and are omitted from the per-class table for that reason,
+   not because they scored badly.
 
 ---
 

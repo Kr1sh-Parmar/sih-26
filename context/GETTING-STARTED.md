@@ -8,11 +8,11 @@ For a developer joining the project, and for the Week 0 scaffold.
 
 1. `README.md` — what the project is (5 min)
 2. `CLAUDE.md` — the hard rules (5 min)
-3. `docs/CONTRACTS.md` — **the frozen interfaces you must build against** (15 min)
-4. `docs/MODULES.md` — find your module's brief (10 min)
-5. `docs/TECHNICAL-SPEC.md` — reference, read as needed
+3. `context/CONTRACTS.md` — **the frozen interfaces you must build against** (15 min)
+4. `context/MODULES.md` — find your module's brief (10 min)
+5. `context/TECHNICAL-SPEC.md` — reference, read as needed
 
-`docs/DECISIONS.md` answers "why is this weird thing like this."
+`context/DECISIONS.md` answers "why is this weird thing like this."
 
 ---
 
@@ -21,17 +21,55 @@ For a developer joining the project, and for the Week 0 scaffold.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-docker compose up -d db minio
-pytest                        # should pass against fixtures from day 0
+pytest                        # passes from day 0; some tests skip until weights exist
 uvicorn api.main:app --reload
 ```
 
 Frontend:
 ```bash
-cd ui && npm install && npm run dev
+cd frontend && npm install && npm run dev
+```
+
+Or the whole thing in containers:
+```bash
+docker compose up            # api on :8000, console on :5173
 ```
 
 **Python 3.11.** ONNX Runtime CPU build. No `onnxruntime-gpu`, no `torch` with CUDA extras.
+
+### Three environments, and they do not mix
+
+| | What | Installed from |
+|---|---|---|
+| `.venv` | the screening path. CPU, offline, no torch. | `requirements.txt` |
+| *(same venv)* | build tooling: the document generator, the model fetchers | `requirements-build.txt` |
+| `.venv-train` | detector training. CUDA torch, ultralytics. | `MODEL-TRAINING.md` |
+
+`requirements.txt` is what the Docker image gets, and `tests/test_offline.py`
+fails if anything under `api/ core/ fusion/ modules/` imports a package that can
+reach the network. That is why Pillow and Faker are in the build file rather
+than the runtime one, and why the training environment is a separate directory
+rather than an extras group.
+
+### There is no `db` or `minio` service
+
+Earlier drafts of this page said `docker compose up -d db minio`. There is no
+Postgres and no MinIO. TECHNICAL-SPEC §2 lists them under layer L8; the
+implementation went to SQLite (`core/store.py`), a brute-force cosine scan
+instead of pgvector, and no object storage at all. `docker-compose.yml` explains
+the divergence. Nothing is missing - the services were never built.
+
+### Before the first real screening
+
+```bash
+python -m issuer.cli init             # the reference issuer keypair + trust anchor
+python scripts/fetch_face_models.py   # SCRFD + ArcFace, build time only
+python scripts/fetch_fonts.py         # Noto, for the document generator
+```
+
+The field detector is trained separately and is not fetched - see
+`MODEL-TRAINING.md`. Without it every declared field reports `inconclusive`,
+which is a supported state: `GET /health` lists what actually loaded.
 
 ---
 
@@ -50,9 +88,9 @@ fusion/finding.py      Finding
 Copy them verbatim from `CONTRACTS.md`. Mark with a module docstring:
 
 ```python
-"""FROZEN CONTRACT. See docs/CONTRACTS.md.
+"""FROZEN CONTRACT. See context/CONTRACTS.md.
 Changes require agreement from the integration owner and must update
-docs/CONTRACTS.md and every implementation in the same commit."""
+context/CONTRACTS.md and every implementation in the same commit."""
 ```
 
 ### 2. Profile loader and config (integration owner, day 1)
@@ -171,5 +209,5 @@ All fake. But every person now has a fixed target and can work without blocking 
 | A model that isn't trained yet | Stub it, return `inconclusive` signals, keep building the surrounding logic |
 | The calibration set | Use a placeholder threshold with a loud `TODO`, but do not merge it to main |
 | A contract that doesn't fit your case | Raise it. Do not edit the contract. |
-| A dataset that turns out to be junk | Check `docs/DATA.md` §Verified problems first — it may already be documented |
+| A dataset that turns out to be junk | Check `context/DATA.md` §Verified problems first — it may already be documented |
 | Not knowing whether something is allowed | `CLAUDE.md` hard rules. If still unclear, ask rather than assume. |

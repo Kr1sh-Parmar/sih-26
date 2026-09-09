@@ -1,0 +1,72 @@
+# `docker compose up` - the whole system, offline.
+#
+# Four separate exit gates assert this file works from clean: ROADMAP Phase 0,
+# the Week 0 gate in GETTING-STARTED, DEMO.md's 24-hour check
+# (`docker compose down -v && docker compose up`), and weekly checkpoint
+# question 4. It did not exist until now.
+#
+# ---------------------------------------------------------------------------
+# What this does NOT contain, and why
+#
+# GETTING-STARTED told you to run `docker compose up -d db minio`. There is no
+# `db` service and no `minio` service here, because there is no Postgres and no
+# MinIO in this system. TECHNICAL-SPEC §2 lists them under layer L8, and the
+# implementation went a different way:
+#
+#   * the store is SQLite (`core/store.py`) - one file under `var/`, which is
+#     the right size for a single checkpoint box and removes a network
+#     dependency from a system whose whole claim is that it has none;
+#   * the face gallery is a brute-force cosine scan over that table rather than
+#     pgvector HNSW, and `store.search_faces` carries its own note about when
+#     that stops being true;
+#   * nothing writes document images to object storage. `PENDING` holds them in
+#     memory for the session and that is all.
+#
+# Writing a compose file with a `db` service the code never opens would make
+# `docker compose up` succeed while proving nothing. This runs what is actually
+# there.
+# ---------------------------------------------------------------------------
+
+services:
+  api:
+    build: .
+    image: sih-screening-api
+    ports:
+      - "8000:8000"
+    volumes:
+      # The SQLite store, the reference issuer keypair and the ID salt. Bind
+      # mounted rather than a named volume so `issuer/cli.py init` run on the
+      # host is the same trust anchor store the container reads.
+      - ./var:/app/var
+    environment:
+      SCREENING_ORT_THREADS: "4"
+    restart: unless-stopped
+
+  console:
+    build:
+      context: ./frontend
+    image: sih-screening-console
+    ports:
+      - "5173:80"
+    environment:
+      # Baked at build time by Vite; see frontend/Dockerfile.
+      VITE_API_URL: "http://localhost:8000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # `docker compose --profile verify run --rm verify`
+  #
+  # Runs the test suite inside the image, with the network taken away. This is
+  # the automated half of DEMO.md's closing move - pull the cable, run it again
+  # - and it is the only way to prove the offline claim about the *image*
+  # rather than about a developer's working tree.
+  verify:
+    build: .
+    image: sih-screening-api
+    profiles: ["verify"]
+    network_mode: "none"
+    volumes:
+      - ./var:/app/var
+    command: ["python", "-m", "pytest", "-q"]

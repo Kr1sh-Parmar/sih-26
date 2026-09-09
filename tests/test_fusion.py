@@ -8,7 +8,9 @@ import pytest
 
 from core.profiles import load_profile
 from fusion.findings import build_findings, group_severity, resolve_anchor
-from fusion.score import coverage, score
+from fusion.finding import Finding
+from fusion.score import (apply_crypto_precedence, confirmed_fields,
+                          coverage, score)
 from fusion.signal import Signal, from_json
 
 
@@ -177,3 +179,168 @@ def test_crossdoc_red_is_cryptographically_backed(fixtures):
     assert v.band == "RED"
     assert culprit.trust_class == "cryptographic"
     assert v.reason == culprit.evidence
+
+
+# ------------------------- what a signature is allowed to suppress, and when
+
+
+def test_a_signature_only_suppresses_a_field_it_was_checked_against():
+    """The suppression that hid the evidence for a retyped card.
+
+    `apply_crypto_precedence` drops probabilistic findings on signed fields:
+    an ELA hotspot over a signed date of birth is recompression noise. The old
+    rule fed it *every field the payload mentions*, which is the same mistake
+    the VIZ/MRZ check made - a signature proves the payload, and says nothing
+    about the ink until somebody compares the two.
+
+    So a genuine signed card with its printed DOB altered had its
+    `tamper.physical.font_consistency` finding - the check that exists to catch
+    reprinting - suppressed as noise, because `field:dob` was in the payload.
+    """
+    tamper = Finding(anchor="field:dob", trust_class="probabilistic", severity=0.9,
+                     headline="Character heights vary across the date of birth",
+                     supporting=[sig("tamper.physical.font_consistency", "fail",
+                                     module="tamper", trust="probabilistic",
+                                     anchor="field:dob")])
+    clean_sig = Finding(anchor="document", trust_class="cryptographic", severity=0.0,
+                        headline="Signature verifies",
+                        supporting=[sig("validation.signature.valid", "pass",
+                                        trust="cryptographic")])
+    findings = [clean_sig, tamper]
+
+    # A verifying signature, but nothing compared the print against it.
+    nothing_checked = confirmed_fields([
+        sig("validation.signature.valid", "pass", trust="cryptographic"),
+    ])
+    assert nothing_checked == set()
+    assert tamper in apply_crypto_precedence(findings, nothing_checked), (
+        "tamper evidence over an unconfirmed field was suppressed"
+    )
+
+    # Print read and found to agree: now the hotspot really is noise.
+    checked = confirmed_fields([
+        sig("validation.signed.dob_mismatch", "pass", trust="cryptographic",
+            anchor="field:dob"),
+    ])
+    assert checked == {"field:dob"}
+    assert tamper not in apply_crypto_precedence(findings, checked)
+
+
+def test_a_failing_comparison_confirms_nothing():
+    """Only a *passing* check corroborates. A mismatch is the opposite."""
+    assert confirmed_fields([
+        sig("validation.signed.dob_mismatch", "fail", trust="cryptographic",
+            anchor="field:dob"),
+        sig("validation.crossdoc.name_mismatch", "inconclusive",
+            trust="cryptographic", anchor="field:name"),
+    ]) == set()
+
+
+def test_the_cross_document_check_also_corroborates():
+    """Scene 3's path: a signed Aadhaar vouching for a PAN's printed DOB."""
+    assert confirmed_fields([
+        sig("validation.crossdoc.dob_mismatch", "pass", trust="cryptographic",
+            anchor="field:dob"),
+    ]) == {"field:dob"}
+
+
+# ------------------- a finding is labelled by the evidence for its own claim
+
+
+def _mixed_anchor(signature="pass"):
+    """A clean signature, a confirmed print, and one noisy heuristic on top."""
+    return [
+        sig("validation.signature.valid", signature, trust="cryptographic", conf=1.0),
+        sig("validation.signed.dob_mismatch", "pass", trust="cryptographic",
+            anchor="field:dob", conf=1.0),
+        sig("tamper.digital.ela", "fail", module="tamper", trust="probabilistic",
+            anchor="field:dob", conf=0.9),
+    ]
+
+
+def test_a_heuristic_does_not_inherit_a_signatures_trust_class():
+    """A guess must never wear the authority of a signature.
+
+    The finding's class used to be the strongest class present in the group. A
+    clean cryptographic pass sharing an anchor with a failing tamper heuristic
+    therefore produced a finding labelled `cryptographic` whose headline was
+    the heuristic - which is the precise confusion this system exists to
+    prevent, rendered in the officer's evidence list.
+    """
+    dob = next(f for f in build_findings(_mixed_anchor()) if f.anchor == "field:dob")
+    assert dob.trust_class == "probabilistic"
+    assert "tamper.digital.ela" in dob.headline
+    # The signature is still in the group; it just does not lend it its class.
+    assert any(s.trust_class == "cryptographic" for s in dob.supporting)
+
+
+def test_crypto_precedence_can_actually_fire():
+    """The bug the mislabel was hiding.
+
+    That mislabelled finding landed in the cryptographic set carrying severity,
+    so `any(f.severity > 0 for f in crypto)` was true and precedence returned
+    everything untouched. The documented behaviour - a cryptographic pass
+    suppresses probabilistic disputes about a field it confirmed - could not
+    fire in the one situation it was written for.
+    """
+    signals = _mixed_anchor()
+    findings = build_findings(signals)
+    kept = apply_crypto_precedence(findings, confirmed_fields(signals))
+    assert not any(f.anchor == "field:dob" for f in kept), (
+        "an ELA hotspot over a field the signature confirmed was not suppressed"
+    )
+
+
+def test_a_failing_signature_still_suppresses_nothing():
+    """One bad signature and the probabilistic evidence is what the officer needs."""
+    signals = _mixed_anchor(signature="fail")
+    kept = apply_crypto_precedence(build_findings(signals), confirmed_fields(signals))
+    assert any(f.anchor == "field:dob" for f in kept)
+
+
+def test_a_passing_group_still_reports_its_strongest_class():
+    """With nothing failing, the finding is a pass and the strongest class is right."""
+    signals = [
+        sig("validation.signed.dob_mismatch", "pass", trust="cryptographic",
+            anchor="field:dob", conf=1.0),
+        sig("extraction.ocr.dob.confidence", "pass", module="extraction",
+            trust="probabilistic", anchor="field:dob", conf=0.8),
+    ]
+    dob = next(f for f in build_findings(signals) if f.anchor == "field:dob")
+    assert dob.trust_class == "cryptographic"
+    assert dob.severity == 0.0
+
+
+# ------------------------------------------------------- the risk gate
+
+
+def test_a_verified_signature_does_not_buy_less_forensic_scrutiny():
+    """The branch this replaces was dead, and the obvious repair is wrong.
+
+    gate.py used to escalate un-signed documents above a *higher* threshold
+    (0.25) than the general rule (0.15), so it never changed a decision - only
+    the reason string. The tempting fix is to invert it and let a signature buy
+    benefit of the doubt in a grey zone.
+
+    D48 is why that is refused: a signature proves the payload and says nothing
+    about the ink. Buying less scrutiny of the printing with a verified
+    signature is the assumption that let a retyped card pass twice.
+    """
+    from fusion.gate import decide
+
+    def tamper_at(level, *, signed):
+        sigs = [sig("tamper.digital.ela", "fail", module="tamper",
+                    trust="probabilistic", conf=level)]
+        if signed:
+            sigs.append(sig("validation.signature.valid", "pass",
+                            trust="cryptographic", conf=1.0))
+        return decide(sigs, PASSPORT)[0]
+
+    for level in (0.05, 0.14, 0.16, 0.26, 0.40):
+        assert tamper_at(level, signed=True) == tamper_at(level, signed=False), (
+            f"a verified signature changed the escalation decision at {level}"
+        )
+
+    # And the threshold itself still bites in both directions.
+    assert tamper_at(0.14, signed=True) == "clear"
+    assert tamper_at(0.16, signed=True) == "escalate"

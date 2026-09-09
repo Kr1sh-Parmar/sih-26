@@ -14,15 +14,15 @@ from typing import Iterator
 
 import numpy as np
 
-from core.canonical import doc_hash, signed_fields
+from core.canonical import doc_hash
 from core.decode import decode
-from core.profiles import load_profile
+from core.profiles import load_config, load_profile
 from core.trust import TrustAnchorStore, Verification
 from fusion.context import ScreeningContext
 from fusion.evidence import cards
 from fusion.findings import build_findings
 from fusion.gate import decide
-from fusion.score import Verdict, score
+from fusion.score import Verdict, confirmed_fields, score
 from fusion.signal import Signal
 from modules import extraction, face, tamper
 from modules import validation
@@ -72,9 +72,25 @@ def build_context(image_bytes: bytes, doc_type: str, session_id: str,
     )
 
 
+def decode_live(image_bytes: bytes) -> np.ndarray:
+    """The live camera frame. A second capture, not a second read of the first.
+
+    Decode-once (CLAUDE.md rule 6) is about not re-reading the *document*; the
+    live frame is a different photograph and has to enter somewhere.
+    """
+    return decode(image_bytes)
+
+
 def screen(ctx: ScreeningContext, *, anchors: TrustAnchorStore | None = None,
-           store=None, uploaded: bool = False) -> Iterator[Event]:
-    """Run the pipeline, yielding events as each stage completes."""
+           store=None, uploaded: bool = False,
+           raw: bytes | None = None) -> Iterator[Event]:
+    """Run the pipeline, yielding events as each stage completes.
+
+    `raw` is the original file bytes. They are threaded through as an argument
+    rather than added to `ScreeningContext`, which is a frozen contract - and
+    only the tampering module wants them, for the two checks that read file
+    structure rather than pixels. Nothing re-decodes them.
+    """
     started = time.perf_counter()
     yield Event("phase", {"phase": "decoding"})
     yield Event("phase", {"phase": "tier1"})
@@ -92,7 +108,7 @@ def screen(ctx: ScreeningContext, *, anchors: TrustAnchorStore | None = None,
         ctx.signals.append(s)
         yield Event("signal", {"signal": s})
 
-    for s in tamper.run(ctx, tier=1, uploaded=uploaded):
+    for s in tamper.run(ctx, tier=1, uploaded=uploaded, raw=raw):
         ctx.signals.append(s)
         yield Event("signal", {"signal": s})
 
@@ -109,18 +125,21 @@ def screen(ctx: ScreeningContext, *, anchors: TrustAnchorStore | None = None,
         # About 15% of documents get here. Running deep forensics on the other
         # 85% would blow the budget for no gain (D6).
         yield Event("phase", {"phase": "tier2"})
-        for s in tamper.run(ctx, tier=2, uploaded=uploaded):
+        for s in tamper.run(ctx, tier=2, uploaded=uploaded, raw=raw):
             if s.tier == 2:
                 ctx.signals.append(s)
                 yield Event("signal", {"signal": s})
-        for s in face.run(ctx, tier=2):
+        for s in face.run(ctx, tier=2, store=store,
+                          doc_hash=_hash_of(ctx, verification)):
             if s.tier == 2:
                 ctx.signals.append(s)
                 yield Event("signal", {"signal": s})
 
     # --- Fusion -----------------------------------------------------------
     yield Event("phase", {"phase": "fusing"})
-    proven = signed_fields(verification.payload) if verification and verification.ok else set()
+    # Fields where a signature was actually checked against the ink, not
+    # every field the payload happens to carry. See confirmed_fields().
+    proven = confirmed_fields(ctx.signals)
     findings = build_findings(ctx.signals, ctx.field_boxes)
     verdict = score(ctx.signals, ctx.profile, findings, signed_fields=proven)
 
@@ -170,8 +189,31 @@ def _hash_of(ctx: ScreeningContext, verification: Verification | None) -> str:
 
 
 def persist(result: Result, store, officer_id: str | None = None) -> str:
-    """Record the event. Full signal list, hashed identity number, no raw PII."""
+    """Record the event. Full signal list, hashed identity number, no raw PII.
+
+    The face embedding is stored; the crop is not. A 512-float vector cannot be
+    turned back into a face, and raw face images do not outlive the session
+    (TECHNICAL-SPEC.md section 9). Without this the 1:N gallery has nothing to
+    search and would report "no duplicate" forever, which reads as a pass.
+    """
     number = result.ctx.fields.get("id_number")
+    event_id = _record(result, store, number, officer_id)
+    # `a or b` on numpy arrays raises "truth value of an array ... is
+    # ambiguous" - `or` calls `bool()` on the left operand, and an embedding is
+    # a 512-element array. This read `.get("live") or .get("doc")` and so threw
+    # on **every screening that produced a live face embedding**, which is the
+    # only case it was written for. It never fired because nothing supplied a
+    # live frame: no test did, and the console had no path to send one. The
+    # first real live capture hit it immediately.
+    embedding = result.ctx.embeddings.get("live")
+    if embedding is None:
+        embedding = result.ctx.embeddings.get("doc")
+    if embedding is not None:
+        store.add_face(event_id, embedding)
+    return event_id
+
+
+def _record(result: Result, store, number, officer_id) -> str:
     return store.record_event(
         session_id=result.ctx.session_id,
         doc_type=result.ctx.doc_type,
@@ -192,3 +234,62 @@ def as_prior(result: Result) -> dict:
         result.ctx.doc_type, result.verification,
         {k: v.value for k, v in result.ctx.fields.items() if k != "signed_payload"},
     )
+
+
+# --------------------------------------------------------------- re-scoring
+
+def profile_with_weights(doc_type: str, weights: dict | None) -> dict:
+    """A profile with some weights overridden, without touching the cached one.
+
+    `load_profile` is `lru_cache`d, so the dict it returns is shared by every
+    request in the process. Mutating it would change the operating point for
+    everyone who screened afterwards - and silently, since nothing re-reads the
+    file. Copy first.
+    """
+    import copy
+
+    profile = load_profile(doc_type)
+    if not weights:
+        return profile
+    clone = copy.deepcopy(profile)
+    clone["weights"].update({str(k): float(v) for k, v in weights.items()})
+    return clone
+
+
+def rescore(signals: list[Signal], profile: dict, bands: dict,
+            signed_fields: set[str] | None = None) -> Verdict:
+    """`fusion.score.score()` with the bands injected instead of read from config.
+
+    ponytail: this restates score()'s ordering - hard fail, then coverage
+    floor, then cryptographic precedence, then bands - because the coverage
+    floor is itself band-dependent, so it cannot simply be re-banded after the
+    fact. Every piece of arithmetic is imported rather than copied; only the
+    order is written twice. `tests/test_rescore.py` asserts this agrees with
+    `score()` exactly when handed the configured bands, which is the guard
+    against the two drifting apart. The real fix is a `bands=` parameter on
+    `score()`, which is a frozen-contract-adjacent change and not mine to make.
+    """
+    from fusion.score import (apply_crypto_precedence, coverage, hard_failures,
+                              score_findings)
+
+    cfg = load_config("bands")
+    cov = coverage(signals, profile)
+
+    hard = hard_failures(signals, profile)
+    if hard:
+        return Verdict("RED", 1.0, cov, [], hard[0].evidence)
+
+    findings = build_findings(signals)
+    if cov < float(bands["coverage_floor"]):
+        return Verdict("AMBER", score_findings(findings, signals, profile), cov,
+                       findings, cfg["messages"]["low_coverage"])
+
+    kept = apply_crypto_precedence(findings, signed_fields or set())
+    value = score_findings(kept, signals, profile)
+    if value < float(bands["green_below"]):
+        band = "GREEN"
+    elif value < float(bands["amber_below"]):
+        band = "AMBER"
+    else:
+        band = "RED"
+    return Verdict(band, value, cov, kept, None)

@@ -4,18 +4,20 @@ Every identity number here is synthetic: the Aadhaar numbers carry a computed
 Verhoeff digit over an arbitrary payload, and the passport numbers are made up.
 """
 import time
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pytest
 
-from core.profiles import load_profile
+from core.profiles import load_config, load_profile
 from core.store import Store
 from core.trust import Anchor, TrustAnchorStore, verify_payload
 from fusion.context import NormalizedField, ScreeningContext
 from issuer.sign import Keypair, sign
 from modules.extraction import mrz as M
-from modules.validation import layer_a, layer_b, layer_c, layer_d, layer_e, run
+from modules.extraction import normalize as N
+from modules.validation import (layer_a, layer_b, layer_c, layer_d, layer_e,
+                                layer_f, run)
 from modules.validation.checksums import verhoeff_digit
 
 TODAY = date(2026, 9, 6)
@@ -318,6 +320,58 @@ def test_a_namesake_with_a_different_dob_is_inconclusive_not_a_detention(seeded_
     assert "Manual check" in s.evidence
 
 
+def test_a_transliteration_variant_is_found_but_never_detains(seeded_store):
+    """The spelling this layer could not previously see.
+
+    "Wonted Person" is one vowel per token away from "Wanted Person" and lands
+    in the same Soundex bucket. Finding it is the point of the near-match path -
+    and reporting it as `fail` would be a detention decided by a spell-checker,
+    so it must not.
+    """
+    ctx = passport_ctx(name=field("Wonted Person"))
+    s = by_id(layer_e.run(ctx, store=seeded_store))["validation.watchlist.hit"]
+    assert s.verdict == "inconclusive"
+    assert s.verdict != "fail"          # hard_fail in every profile. Never guess it.
+    assert "WANTED PERSON" in s.evidence
+    assert "sounds like" in s.evidence
+
+
+def test_a_near_match_is_less_confident_than_an_exact_one(seeded_store):
+    near = by_id(layer_e.run(passport_ctx(name=field("Wonted Person")),
+                             store=seeded_store))["validation.watchlist.hit"]
+    exact = by_id(layer_e.run(passport_ctx(name=field("Wanted Person"),
+                                           dob=field("1980-01-01"),
+                                           mrz_dob="1980-01-01"),
+                              store=seeded_store))["validation.watchlist.hit"]
+    assert near.confidence < exact.confidence
+
+
+def test_an_unrelated_name_is_still_a_clean_pass(seeded_store):
+    """The failure that matters more than the miss: a near-match path that
+    fires on everything teaches an officer to ignore the whole evidence list."""
+    s = by_id(layer_e.run(passport_ctx(name=field("Ravi Sharma")),
+                          store=seeded_store))["validation.watchlist.hit"]
+    assert s.verdict == "pass"
+
+
+def test_soundex_collapses_the_transliterations_it_is_there_for():
+    assert layer_e.soundex("GHARAT") == layer_e.soundex("GHORAT")
+    assert layer_e.soundex("PRADEEP") == layer_e.soundex("PRODEEP")
+    # Order-insensitive, for the same reason the exact key is.
+    assert (layer_e.phonetic_key("GHARAT PRADEEP")
+            == layer_e.phonetic_key("PRADEEP GHARAT"))
+
+
+def test_two_stores_of_equal_size_do_not_share_an_index():
+    """A module-level cache keyed on row count would have failed this."""
+    a, b = Store(":memory:"), Store(":memory:")
+    for store, name in ((a, "ALPHA ONE"), (b, "BETA TWO")):
+        store.add_watchlist_entry(source="synthetic", name=name,
+                                  name_key=" ".join(sorted(name.split())))
+    assert layer_e._nearest(a, "Alpha One") is None      # exact, handled earlier
+    assert layer_e._nearest(a, "Beta Two") is None       # not on store a at all
+
+
 def test_an_empty_watchlist_is_inconclusive_not_a_clean_pass():
     ctx = passport_ctx()
     s = by_id(layer_e.run(ctx, store=Store(":memory:")))["validation.watchlist.hit"]
@@ -337,3 +391,298 @@ def test_layers_a_to_d_run_inside_the_15ms_budget():
         run(ctx, anchors=anchors)
     per_call_ms = (time.perf_counter() - started) / 20 * 1000
     assert per_call_ms < 15, f"Layers A-D took {per_call_ms:.1f} ms, budget is 15"
+
+
+# ------------------------- unverified reads may not contradict proven values
+
+def test_a_fallback_read_cannot_hard_fail_a_genuine_document():
+    """The worst failure this system can produce, and it was reachable.
+
+    Florence-2 transcribes a date perfectly and then returns CHABRA for
+    CHHABRA (data/EXTRACTION.md). Layer D compared whatever sat in
+    `ctx.fields`, so a one-character misread against a signed payload fired
+    `validation.crossdoc.name_mismatch` - a hard fail on four profiles -
+    carrying trust class `cryptographic`, because the *other* side of the
+    comparison is signed.
+
+    A genuine traveller detained on an OCR error, and the console telling the
+    officer it was certain. That is precisely the laundering of a probabilistic
+    read into a cryptographic verdict that D3 exists to prevent.
+
+    A disagreement between a proven value and an unchecked fallback read is not
+    evidence of tampering; it is evidence the read was unreliable.
+    """
+    prior = signed_aadhaar_prior()
+    ctx = pan_ctx(prior=prior)
+    ctx.fields["name"] = field("PRADEEP KESHAV GHARAX", source="vlm")
+
+    s = by_id(layer_d.run(ctx))["validation.crossdoc.name_mismatch"]
+    assert s.verdict == "inconclusive", (
+        "an unratified fallback read is disputing a cryptographically proven "
+        "field, which can detain a genuine traveller on a transcription error")
+    assert "fallback reader" in s.evidence
+
+
+def test_an_ocr_read_still_hard_fails_a_real_mismatch():
+    """The guard must not have bought safety by going blind.
+
+    Layer D trust propagation is the headline demo and is on the never-cut
+    list; an OCR-sourced disagreement has to keep firing.
+    """
+    ctx = pan_ctx(prior=signed_aadhaar_prior())
+    ctx.fields["name"] = field("PRADEEP KESHAV GHARAX", source="ocr")
+
+    s = by_id(layer_d.run(ctx))["validation.crossdoc.name_mismatch"]
+    assert s.verdict == "fail"
+    assert s.trust_class == "cryptographic"
+
+
+def test_a_fallback_read_cannot_contradict_the_machine_readable_zone():
+    """Same guard, Layer C. `validation.vizmrz.dob_mismatch` is a hard fail on
+    passport, and it is the single highest-value tamper signal - which is
+    exactly why it must not fire on a transcription error."""
+    ctx = passport_ctx()
+    ctx.fields["dob"] = field("1991-08-05", source="vlm")
+
+    s = by_id(layer_c.run(ctx, today=TODAY))["validation.vizmrz.dob_mismatch"]
+    assert s.verdict == "inconclusive"
+    assert "fallback reader" in s.evidence
+
+
+def test_the_comparable_guard_admits_the_sources_that_earned_it():
+    """`qr` is comparable because a signed payload is proven; `mrz` because it
+    carries its own check digits; `ocr` because it is gated on a confidence
+    floor. `vlm` has none of the three."""
+    from modules.validation import COMPARABLE_SOURCES
+    assert COMPARABLE_SOURCES == frozenset({"ocr", "mrz", "qr"})
+
+
+# ----------------------------------------------------------------- Layer F
+
+
+def _event_at(store, post, *, hours_ago, number="E1009353", session="other"):
+    """Record one screening at `post`, backdated. Layer F reads created_at."""
+    import os
+    was = os.environ.get("SCREENING_POST_ID")
+    os.environ["SCREENING_POST_ID"] = post
+    try:
+        event_id = store.record_event(
+            session_id=session, doc_type="passport", doc_hash="h" * 8,
+            verdict="GREEN", score=0.1, coverage=0.9, signals=[],
+            model_versions={}, id_number=number,
+        )
+    finally:
+        if was is None:
+            os.environ.pop("SCREENING_POST_ID", None)
+        else:
+            os.environ["SCREENING_POST_ID"] = was
+    stamp = (datetime.utcnow() - timedelta(hours=hours_ago)).isoformat()
+    with store._tx() as c:
+        c.execute("UPDATE screening_events SET created_at = ? WHERE id = ?",
+                  (stamp, event_id))
+    return event_id
+
+
+@pytest.fixture
+def one_post(monkeypatch):
+    monkeypatch.setenv("SCREENING_POST_ID", "raxaul")
+    return Store(":memory:")
+
+
+def test_transit_is_not_applicable_on_a_standalone_post(monkeypatch):
+    """The default, and it must stay the default. One post cannot see transit,
+    and a check that fires on a re-capture trains officers to ignore it."""
+    monkeypatch.delenv("SCREENING_POST_ID", raising=False)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, Store(":memory:")))[
+        "validation.history.impossible_transit"]
+    assert s.verdict == "not_applicable"
+
+
+def test_the_same_document_at_two_distant_posts_within_the_hour(one_post):
+    # Sunauli to Raxaul is ~148 km of road. Twenty minutes is not possible.
+    _event_at(one_post, "sunauli", hours_ago=0.33)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, one_post))["validation.history.impossible_transit"]
+    assert s.verdict == "fail"
+    assert "Sunauli" in s.evidence and "Raxaul" in s.evidence
+    assert "km" in s.evidence
+
+
+def test_the_same_journey_with_enough_time_is_a_pass(one_post):
+    _event_at(one_post, "sunauli", hours_ago=12)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, one_post))["validation.history.impossible_transit"]
+    assert s.verdict == "pass"
+
+
+def test_twice_at_this_post_is_context_not_an_accusation(one_post):
+    """A re-capture and a secondary inspection both look like this."""
+    _event_at(one_post, "raxaul", hours_ago=0.1)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, one_post))["validation.history.impossible_transit"]
+    assert s.verdict == "pass"
+    assert "screened at this post" in s.evidence
+
+
+def test_a_post_outside_the_location_table_is_inconclusive(one_post):
+    _event_at(one_post, "some-new-icp", hours_ago=0.2)
+    ctx = passport_ctx(id_number=field("E1009353"))
+    s = by_id(layer_f.run(ctx, one_post))["validation.history.impossible_transit"]
+    assert s.verdict == "inconclusive"
+    assert "not in this network's location table" in s.evidence
+
+
+def test_the_distance_between_two_real_posts_is_about_right():
+    posts = load_config("posts")["posts"]
+    km = layer_f.haversine_km(posts["raxaul"], posts["sunauli"])
+    assert 120 < km < 180        # ~148 km. A wrong formula lands nowhere near.
+
+
+# ------------------------------------------------- the ISO 3166 table itself
+
+
+def test_the_country_code_table_is_actually_installed():
+    """The bug this pins shipped, and was invisible on a developer machine.
+
+    `data/raw/` is excluded wholesale - it is hundreds of megabytes of imagery -
+    and the exclusion also caught the 134 KB ISO 3166 table. `country_codes()`
+    then fell back to the 16 ICAO supplementary codes, so `is_country_code`
+    said IND was not a country, and a genuine Indian passport picked up a
+    `fail` on its nationality in the container and in every fresh clone.
+
+    This asserts the file is where the packaging says it is. It fails in a
+    clone that has re-excluded it, which is the whole point.
+    """
+    assert N.codes_loaded(), (
+        "data/raw/reference/iso3166/country-codes.csv is missing. Check the "
+        "data/raw exception in .gitignore and .dockerignore."
+    )
+    assert N.is_country_code("IND")
+    assert len(N.country_codes()) > 200
+
+
+def test_a_missing_country_table_is_inconclusive_not_a_failed_document(monkeypatch):
+    """And if it does go missing, the document is not blamed for it."""
+    monkeypatch.setattr(N, "codes_loaded", lambda: False)
+    ctx = passport_ctx(nationality=field("IND"))
+    s = by_id(layer_b.run(ctx))["validation.format.passport.nationality"]
+    assert s.verdict == "inconclusive"
+    assert "not installed" in s.evidence
+
+
+# ------------------------------- the signed payload is not a printed value
+
+
+def test_a_qr_sourced_field_cannot_pass_the_viz_mrz_check():
+    """The forgery this lets through if it is wrong.
+
+    With no field detector nothing printed is read, and `seed_from_payload`
+    fills ctx.fields from the verified QR. Those values then looked like
+    printed values to the VIZ/MRZ check, so all six comparisons passed with
+    evidence reading "matches printed" - naming a value that was never printed
+    anywhere. The issuer generates the payload and the MRZ together from one
+    record, so the comparison was two halves of one artefact agreeing with
+    itself.
+
+    Measured consequence before the fix: a generated passport scored GREEN at
+    coverage 0.752, and so did the same passport with its entire printed band
+    wiped and retyped. Afterwards both are AMBER at 0.496 - the system cannot
+    read the document, so it declines to clear it (D9).
+
+    This does not mean the retype is *detected*. It means it is not cleared.
+    Detection comes back when the detector lands and there is real ink to
+    compare.
+    """
+    ctx = passport_ctx(dob=field("1991-08-04", source="qr"),
+                       mrz_dob="1991-08-04")
+    s = by_id(layer_c.run(ctx))["validation.vizmrz.dob_mismatch"]
+    assert s.verdict == "inconclusive", (
+        "a value from the signed payload was treated as printed ink"
+    )
+    assert "signed payload" in s.evidence
+
+
+def test_an_ocr_read_field_still_passes_the_viz_mrz_check():
+    """The fix must not break the check it is protecting."""
+    ctx = passport_ctx(dob=field("1991-08-04", source="ocr"),
+                       mrz_dob="1991-08-04")
+    assert by_id(layer_c.run(ctx))["validation.vizmrz.dob_mismatch"].verdict == "pass"
+
+
+def test_an_ocr_read_field_that_disagrees_still_fails():
+    ctx = passport_ctx(dob=field("1998-11-02", source="ocr"),
+                       mrz_dob="1991-08-04")
+    s = by_id(layer_c.run(ctx))["validation.vizmrz.dob_mismatch"]
+    assert s.verdict == "fail"
+    assert "1998-11-02" in s.evidence and "1991-08-04" in s.evidence
+
+
+# ----------------------- a document against its own signature (Layer D, self)
+
+
+def _signed_ctx(printed_dob, *, source="ocr", payload_dob="1996-11-02"):
+    """An Aadhaar whose own QR verifies, with a printed DOB we control."""
+    theirs = Keypair.generate("SIH-REF-01")
+    envelope = sign({"doc_type": "aadhaar", "dob": payload_dob,
+                     "name": "RACHITA KUMER"}, theirs)
+    anchors = TrustAnchorStore([Anchor("SIH-REF-01", theirs.public_key,
+                                       "ed25519", True, None, None)])
+    ctx = ctx_for("aadhaar", {
+        "signed_payload": field("", raw=envelope, source="qr"),
+        "dob": field(printed_dob, source=source),
+    })
+    return ctx, anchors
+
+
+def test_a_card_that_disagrees_with_its_own_signature_is_a_hard_fail():
+    """The hole this closes.
+
+    Layer D compared a signed document against the *other* documents in the
+    session and never against the card carrying the signature. So a genuine
+    signed Aadhaar with its printed date of birth altered - QR untouched, so
+    the signature still verifies - produced no failing signal at all. Measured
+    on `var/demo/gen_aadhaar.png`: printed 1988-11-02 against a signed payload
+    of 1960-03-24, zero failures.
+
+    A signature proves the payload. It says nothing about the ink until
+    somebody compares the two, and nobody did.
+    """
+    ctx, anchors = _signed_ctx("1988-11-02")
+    s = by_id(layer_d.run(ctx, anchors=anchors))["validation.signed.dob_mismatch"]
+    assert s.verdict == "fail"
+    assert s.hard_fail is True
+    assert "1996-11-02" in s.evidence and "1988-11-02" in s.evidence
+
+
+def test_a_card_that_agrees_with_its_own_signature_passes():
+    ctx, anchors = _signed_ctx("1996-11-02")
+    s = by_id(layer_d.run(ctx, anchors=anchors))["validation.signed.dob_mismatch"]
+    assert s.verdict == "pass"
+
+
+def test_a_value_taken_from_the_payload_cannot_corroborate_the_payload():
+    """The VIZ/MRZ mistake, in its Layer D form.
+
+    With no detector `seed_from_payload` fills the field from the very QR we
+    would be checking it against. Comparing a signature with itself always
+    agrees and proves nothing, so it is `inconclusive` and costs coverage.
+    """
+    ctx, anchors = _signed_ctx("1996-11-02", source="qr")
+    s = by_id(layer_d.run(ctx, anchors=anchors))["validation.signed.dob_mismatch"]
+    assert s.verdict == "inconclusive"
+    assert "not read off the card" in s.evidence
+
+
+def test_a_fallback_read_may_not_condemn_a_card_by_its_own_signature():
+    """Same guard the cross-document half has: the VLM misreads characters,
+    and a one-character misread here would be a hard fail on a genuine card."""
+    ctx, anchors = _signed_ctx("1988-11-02", source="vlm")
+    s = by_id(layer_d.run(ctx, anchors=anchors))["validation.signed.dob_mismatch"]
+    assert s.verdict == "inconclusive"
+    assert "fallback reader" in s.evidence
+
+
+def test_an_unverified_signature_vouches_for_nothing():
+    ctx, _ = _signed_ctx("1988-11-02")
+    assert layer_d.run(ctx, anchors=TrustAnchorStore()) == []
