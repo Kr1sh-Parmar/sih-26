@@ -339,22 +339,58 @@ def _liveness_signal(image, face) -> Signal:
                    region=tuple(face["box"]), started=started)
 
 
+
+def _active_liveness(ctx: ScreeningContext, started) -> Signal:
+    """The blink check, when the console supplied a burst.
+
+    `ctx.faces['live_frames']` is a list where the rest of `faces` holds single
+    frames. The dataclass types it as a plain dict and the frozen contract names
+    no key set, so this adds a key rather than a field - but it is the one place
+    the dict is not uniformly ndarray-valued, and that is worth saying out loud
+    rather than leaving for the next reader to trip over.
+    """
+    frames = ctx.faces.get("live_frames")
+    live = ctx.faces.get("live")
+    if not frames or live is None:
+        return _signal("face.liveness.active", "inconclusive",
+                       "Blink-based liveness was not run - it needs a sequence "
+                       "of frames, and this screening carried a single capture",
+                       confidence=0.0, tier=2, started=started)
+
+    face, _ = _locate(live, "live capture", "face.live.detected", "document")
+    if face is None:
+        return _signal("face.liveness.active", "inconclusive",
+                       "Blink-based liveness was not run - no face was found in "
+                       "the live capture to track the eyes in",
+                       confidence=0.0, tier=2, started=started)
+
+    verdict, confidence, why = liveness.blink(frames, face["box"])
+    return _signal("face.liveness.active", verdict, why,
+                   confidence=confidence, tier=2, started=started)
+
+
 def _tier2(ctx: ScreeningContext, *, store=None,
            doc_hash: str | None = None) -> list[Signal]:
     """Escalated only: 1:N duplicate identity, and active liveness.
 
-    Active liveness needs a frame sequence the API does not carry yet, so it
-    reports what is missing instead of a verdict. It is cut-list item 2 - at a
-    manned counter an officer is standing there - and the passive check is the
-    one that matters.
+    Active liveness reads `ctx.faces['live_frames']` - the short burst the
+    console records alongside the single best frame. A file upload carries no
+    burst and still reports `inconclusive`, which is the honest answer: a
+    liveness check that did not run must never look like one that passed.
     """
     started = time.perf_counter()
-    out = [_signal("face.liveness.active", "inconclusive",
-                   "Blink-based liveness was not run - it needs a sequence of "
-                   "frames, and this screening carried a single capture",
-                   confidence=0.0, tier=2, started=started)]
+    out = [_active_liveness(ctx, started)]
 
-    embedding = ctx.embeddings.get("live") or ctx.embeddings.get("doc")
+    # `a or b` on numpy arrays raises "truth value of an array ... is
+    # ambiguous" - `or` calls `bool()` on the left operand, and an embedding is
+    # a 512-element array. This read `.get("live") or .get("doc")` and so threw
+    # on **every screening that produced a live face embedding**, which is the
+    # only case it was written for. It never fired because nothing supplied a
+    # live frame: no test did, and the console had no path to send one. The
+    # first real live capture hit it immediately.
+    embedding = ctx.embeddings.get("live")
+    if embedding is None:
+        embedding = ctx.embeddings.get("doc")
     if embedding is None or store is None:
         out.append(_signal("face.gallery.duplicate", "inconclusive",
                            "The duplicate-identity search did not run - there "

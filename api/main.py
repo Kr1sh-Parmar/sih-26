@@ -169,6 +169,7 @@ async def create_screening(
     session_id: str = Form(...),
     uploaded: bool = Form(False),
     live: UploadFile | None = None,
+    live_frames: list[UploadFile] | None = None,
 ) -> dict:
     """Accept a capture and return an id. The socket does the work.
 
@@ -176,6 +177,10 @@ async def create_screening(
     It rides on `ctx.faces['live']`, which the frozen contract already carries,
     so accepting it costs no contract change. Without it the face module reports
     what it can about the printed photo and marks the comparison `inconclusive`.
+
+    `live_frames` is the optional short burst the console records around that
+    frame, and it is what the blink check reads. Both are optional and
+    independent: a file upload sends neither, a camera capture sends both.
     """
     if doc_type not in DOC_TYPES:
         raise HTTPException(400, f"unknown document type {doc_type!r}")
@@ -193,6 +198,15 @@ async def create_screening(
             ctx.faces["live"] = pipeline.decode_live(await live.read())
         except DecodeError as exc:
             raise HTTPException(400, f"live capture: {exc}")
+
+    if live_frames:
+        try:
+            # A list, where the rest of `faces` holds single frames. See
+            # `modules.face._active_liveness`, which is the only reader.
+            ctx.faces["live_frames"] = [pipeline.decode_live(await f.read())
+                                        for f in live_frames]
+        except DecodeError as exc:
+            raise HTTPException(400, f"liveness burst: {exc}")
 
     screening_id = str(uuid.uuid4())
     PENDING[screening_id] = {

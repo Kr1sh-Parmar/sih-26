@@ -98,6 +98,15 @@ def main() -> int:
     parser.add_argument("--camera", type=int, default=0,
                         help="THE DEMO WEBCAM. A different camera measures a "
                              "different lens (context/DATA.md)")
+    parser.add_argument("--auto", action="store_true",
+                        help="capture on a timer instead of on SPACE. The "
+                             "volunteer sits still and the operator does not "
+                             "have to reach past them to the keyboard.")
+    parser.add_argument("--interval", type=float, default=0.45,
+                        help="seconds between automatic captures (--auto)")
+    parser.add_argument("--countdown", type=int, default=8,
+                        help="seconds before --auto starts, to sit down and "
+                             "for the previous volunteer to move")
     parser.add_argument("--consent", action="store_true",
                         help="assert written consent was taken before capture")
     args = parser.parse_args()
@@ -123,6 +132,16 @@ def main() -> int:
         print(f"no camera at index {args.camera}")
         return 1
 
+    # Ask for 720p. A laptop camera that defaults to 640x480 puts a face about
+    # 200 px wide at counter distance, which clears the embedding quality gate
+    # but sits under the 320 px floor the blink check needs (D52). Requesting
+    # is all we can do - the driver may refuse, so the actual size is printed.
+    camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    print(f"  camera {args.camera} at "
+          f"{int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))}x"
+          f"{int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
+
     have = len(list(directory.glob("live_*.jpg")))
     portrait = directory / "portrait.jpg"
     print(f"{person}: {have} frames already, portrait "
@@ -130,6 +149,9 @@ def main() -> int:
           f"  SPACE  capture      P  (re)take the portrait for the card\n"
           f"  Q      done         the window must have focus")
 
+    started = time.time()
+    last = 0.0
+    rejected = 0
     try:
         while True:
             read, frame = camera.read()
@@ -137,6 +159,57 @@ def main() -> int:
                 print("camera read failed")
                 return 1
             ok, found, why = usable(frame)
+
+            # --auto: the volunteer sits, the timer fires. Same quality gate as
+            # the manual path - a frame the pipeline would refuse is refused
+            # here too, it is just not a keypress that decides when to try.
+            if args.auto:
+                waited = time.time() - started
+                if waited < args.countdown:
+                    cv2.putText(frame.copy(), "", (0, 0),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 1)
+                    shown = frame.copy()
+                    cv2.putText(shown,
+                                f"{person}  starting in "
+                                f"{int(args.countdown - waited) + 1}s",
+                                (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                                (0, 180, 220), 2)
+                    cv2.imshow("calibration capture", shown)
+                    if (cv2.waitKey(1) & 0xFF) in (ord("q"), 27):
+                        break
+                    continue
+
+                if have >= args.frames:
+                    print("  enough frames for this person")
+                    break
+
+                if ok and (time.time() - last) >= args.interval:
+                    if not portrait.exists():
+                        cv2.imwrite(str(portrait), frame)
+                        print(f"  portrait -> {portrait.name}")
+                    path = directory / f"live_{have:02d}.jpg"
+                    cv2.imwrite(str(path), frame)
+                    have += 1
+                    last = time.time()
+                    print(f"  {path.name}  ({have}/{args.frames})")
+                elif not ok:
+                    rejected += 1
+                    if rejected % 60 == 0:
+                        print(f"  waiting: {why}")
+
+                shown = frame.copy()
+                if found is not None:
+                    x1, y1, x2, y2 = (int(v) for v in found["box"])
+                    cv2.rectangle(shown, (x1, y1), (x2, y2),
+                                  (0, 200, 0) if ok else (0, 0, 220), 2)
+                cv2.putText(shown, f"{person}  {have}/{args.frames}  "
+                            f"{'OK' if ok else 'REJECT'}  [auto]", (12, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+                            (0, 200, 0) if ok else (0, 0, 220), 2)
+                cv2.imshow("calibration capture", shown)
+                if (cv2.waitKey(1) & 0xFF) in (ord("q"), 27):
+                    break
+                continue
 
             shown = frame.copy()
             if found is not None:

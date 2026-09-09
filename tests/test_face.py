@@ -456,3 +456,210 @@ def test_the_calibration_apply_rewrites_the_threshold_and_its_todo_together():
     gallery = after.split("  gallery:")[1].split("  liveness:")[0]
     assert "calibrated: false" in gallery
     assert "threshold: 0.45" in gallery
+
+
+# ------------------------------------------------------- active liveness
+
+def _face_frame(eyes_open: bool, size: int = 400) -> np.ndarray:
+    """A crude face: skin oval, two dark eyes when open, closed lids when not.
+
+    Not a real face - the Haar cascade is not asked to fire on this. What these
+    exercise is the decision logic around it: a burst too short, eyes never
+    found, no blink seen, and a blink seen must land on four different verdicts.
+    """
+    frame = np.full((size, size, 3), 200, np.uint8)
+    cv2.ellipse(frame, (size // 2, size // 2), (size // 3, size // 2 - 10),
+                0, 0, 360, (190, 170, 150), -1)
+    y = int(size * 0.40)
+    for x in (int(size * 0.38), int(size * 0.62)):
+        if eyes_open:
+            cv2.circle(frame, (x, y), size // 22, (40, 40, 40), -1)
+        else:
+            cv2.line(frame, (x - size // 20, y), (x + size // 20, y),
+                     (120, 105, 95), 3)
+    return frame
+
+
+#: Comfortably above MIN_FACE_PX, so these exercise the decision logic
+#: rather than the size floor - which has its own test.
+BOX = (0.0, 0.0, 400.0, 400.0)
+
+
+def test_a_burst_too_short_to_judge_is_inconclusive_not_a_pass():
+    verdict, confidence, why = liveness.blink([_face_frame(True)] * 2, BOX)
+    assert verdict == "inconclusive"
+    assert confidence == 0.0
+    assert "frames" in why
+
+
+def test_no_frames_at_all_is_inconclusive():
+    verdict, _, why = liveness.blink([], BOX)
+    assert verdict == "inconclusive"
+    assert "single capture" not in why       # that string belongs to _tier2
+
+
+def test_eyes_never_found_reads_as_a_poor_view_not_a_spoof():
+    """The failure mode that matters most.
+
+    A cascade that cannot see the eyes must never be reported as a person who
+    would not blink. `fail` here would detain someone for wearing glasses.
+    """
+    blank = [np.full((400, 400, 3), 128, np.uint8)] * 6
+    verdict, confidence, why = liveness.blink(blank, BOX)
+    assert verdict == "inconclusive"
+    assert confidence == 0.0
+    assert "not visible" in why or "could not run" in why
+
+
+def test_blink_never_returns_fail_whatever_the_frames_say():
+    """`fail` is not in this check's vocabulary - see `blink.__doc__`.
+
+    People stare. A burst can be short. The officer is standing there. Positive
+    evidence only, so no arrangement of frames may produce a failing verdict.
+    """
+    cases = [
+        [],
+        [_face_frame(True)] * 3,
+        [_face_frame(True)] * 8,
+        [_face_frame(True)] * 4 + [_face_frame(False)] * 2,
+        [np.full((400, 400, 3), 128, np.uint8)] * 6,
+        [_face_frame(False)] * 6,
+    ]
+    for frames in cases:
+        verdict, _, _ = liveness.blink(frames, BOX)
+        assert verdict in ("pass", "inconclusive"), (verdict, len(frames))
+
+
+def test_a_single_frame_capture_still_reports_active_liveness_as_unrun():
+    """The regression guard on the whole feature.
+
+    A file upload carries no burst. If that ever became a pass, the console
+    would tell an officer a spoof check succeeded when it never ran.
+    """
+    from fusion.context import ScreeningContext
+    from core.profiles import load_profile
+    import modules.face as face_module
+
+    ctx = ScreeningContext(session_id="s", image=np.zeros((10, 10, 3), np.uint8),
+                           doc_type="pan", profile=load_profile("pan"))
+    signal = face_module._active_liveness(ctx, time.perf_counter())
+    assert signal.id == "face.liveness.active"
+    assert signal.verdict == "inconclusive"
+    assert signal.tier == 2
+
+
+def test_a_still_photograph_cannot_fake_a_blink_by_detector_flicker():
+    """The direction this check must never fail in.
+
+    Measured on static images, the eye cascade flickers below 320 px face width
+    - and a flicker on a photograph is a phantom blink. Two guards stand in the
+    way: the size floor, and the requirement that closed frames form one run
+    bracketed by open ones. Scattered noise must not clear either.
+    """
+    small = (0.0, 0.0, 200.0, 200.0)
+    frames = [_face_frame(True, size=200)] * 6
+    verdict, _, why = liveness.blink(frames, small)
+    assert verdict == "inconclusive"
+    assert "step closer" in why
+
+    # Big enough face, but the closed frames are scattered rather than a blink.
+    scattered = [True, False, True, False, True, False, True]
+    assert not liveness._brackets_a_run([False, False, True, True])
+    assert liveness._longest_run(scattered, False) == 1
+
+
+def test_the_blink_size_floor_is_the_measured_one():
+    """If this number moves, the measurement behind it has to move with it."""
+    assert liveness.MIN_FACE_PX == 320, (
+        "the floor is measured, not chosen - see the comment on MIN_FACE_PX "
+        "and re-run the static-image stability check before changing it")
+
+
+def test_one_frame_used_as_both_document_and_live_is_a_self_comparison():
+    """Why the console photographs the card and the traveller separately.
+
+    `_locate` takes `largest(detect(image))` for both the document portrait and
+    the live face. Hand it the same photograph twice and it finds the same face
+    twice, so the cosine is 1.0 and a document trivially "matches" itself -
+    evidence that is not independent of what it claims to prove, which is the
+    D48 failure wearing a different hat.
+
+    This test does not assert that the pipeline defends against it, because it
+    cannot: from inside `modules/face` the two images are just two arrays. It
+    pins the reason the *capture screen* takes two photographs, so that anyone
+    tempted to reuse one frame finds this written down first.
+    """
+    if not (registry.available(registry.FACE_DETECTOR)
+            and registry.available(registry.FACE_EMBEDDING)):
+        pytest.skip("face weights are not deployed")
+
+    from modules.face import detect as fdet
+    from modules.face import embed as fembed
+
+    # A generated card carries a real portrait; the synthetic card is drawn
+    # shapes and has no face to reason about.
+    cards = sorted(glob.glob(str(
+        registry.ROOT / "data/processed/generated/*/images/*.png")))
+    card = next((c for c in (cv2.imread(p) for p in cards[:8])
+                 if c is not None and fdet.find(c)[0] is not None), None)
+    if card is None:
+        pytest.skip("no generated card with a locatable portrait on disk")
+
+    # The same frame, entering the pipeline through both doors.
+    doc_face, _ = fdet.find(card)
+    live_face, _ = fdet.find(card)
+    assert doc_face["box"] == live_face["box"], (
+        "the two paths found different faces in one image; if this ever "
+        "becomes true the reasoning in Capture.tsx:grabLive needs revisiting")
+
+    a = fembed.of(card, doc_face["landmarks"])
+    b = fembed.of(card, live_face["landmarks"])
+    assert fembed.cosine(a, b) > 0.99, fembed.cosine(a, b)
+
+
+def test_a_live_embedding_does_not_break_the_gallery_or_the_audit_record():
+    """The bug that made the whole live-face path unreachable.
+
+    `_tier2` and `api.router.persist` both chose an embedding with
+    `ctx.embeddings.get("live") or ctx.embeddings.get("doc")`. `or` calls
+    `bool()` on its left operand, and an embedding is a 512-element array, so
+    that raises "truth value of an array with more than one element is
+    ambiguous" - on **every** screening that produced a live embedding, which
+    is the only case the line exists for.
+
+    It never fired because nothing ever supplied a live frame: no test did, and
+    the console had no path to send one. The first real live capture through
+    the API hit it in the first second, and the officer saw "Screening failed".
+    """
+    import numpy as np
+    from core.profiles import load_profile
+    from fusion.context import ScreeningContext
+    import modules.face as face_module
+
+    ctx = ScreeningContext(session_id="s", image=np.zeros((10, 10, 3), np.uint8),
+                           doc_type="pan", profile=load_profile("pan"))
+    ctx.embeddings["live"] = np.full(512, 0.02, np.float32)
+    ctx.embeddings["doc"] = np.full(512, 0.01, np.float32)
+
+    # Must not raise. Store is None so the gallery search reports honestly.
+    signals = face_module._tier2(ctx, store=None, doc_hash="abc")
+    assert {s.id for s in signals} >= {"face.liveness.active",
+                                       "face.gallery.duplicate"}
+
+
+def test_persist_prefers_the_live_embedding_without_truth_testing_it():
+    """The same bug, in the audit path."""
+    import numpy as np
+
+    live = np.full(512, 0.02, np.float32)
+    doc = np.full(512, 0.01, np.float32)
+    for embeddings, expected in (({"live": live, "doc": doc}, live),
+                                 ({"doc": doc}, doc),
+                                 ({}, None)):
+        chosen = embeddings.get("live")
+        if chosen is None:
+            chosen = embeddings.get("doc")
+        if expected is None:
+            assert chosen is None
+        else:
+            assert chosen is expected

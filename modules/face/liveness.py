@@ -88,3 +88,145 @@ def score(image: np.ndarray, box) -> float:
     # Index 1 is the live class; 0 and 2 are the two spoof families (a printed
     # or displayed 2D surface, and a 3D mask).
     return float(probabilities[1]) if probabilities.size >= 2 else 0.0
+
+
+# ----------------------------------------------------------------- active
+
+#: Where the eyes sit inside a face box, as fractions. Used to crop the band the
+#: cascade searches, so a mouth or a background window cannot be mistaken for an
+#: eye. Generous on purpose - head tilt moves them.
+EYE_BAND = (0.12, 0.18, 0.88, 0.60)      # x1, y1, x2, y2 of the face box
+
+#: A blink is one or two frames out of a short burst. Requiring more would need
+#: the traveller to hold their eyes shut; requiring exactly one would make a
+#: single missed detection look like liveness.
+MIN_FRAMES = 4
+MIN_OPEN_FRAMES = 2
+
+#: Face width below which this check refuses to answer. **Measured, and the
+#: whole safety of the check rests on it.** Run over static images - eight
+#: frames of one photograph with only JPEG and sensor noise between them, which
+#: is exactly what a printed photo held to the camera looks like - the cascade
+#: is perfectly stable at 320 px and 480 px face width (8/8 or 0/8 every time)
+#: and flickers at 160-210 px (1/8, 7/8). A flicker on a static image *is* a
+#: phantom blink: it would report a photograph as a living person, which is the
+#: one direction this check must never fail in. Below this the answer is
+#: `inconclusive` and the passive check carries the load.
+MIN_FACE_PX = 320
+
+
+def _eye_cascade():
+    """OpenCV's own eye cascade, from inside the installed wheel.
+
+    ponytail: a Haar cascade is a weaker eye detector than the six-point eye
+    aspect ratio the literature uses, and it degrades on spectacles even with
+    the `_tree_eyeglasses` variant. It is here because it needs no new model
+    and no new dependency, so `tests/test_offline.py` - the test that keeps the
+    whole offline claim honest - is untouched by construction. The upgrade path
+    is MediaPipe FaceMesh landmarks and a real EAR, which costs a model file, a
+    dependency, and a re-run of the offline gate.
+    """
+    return cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_eye_tree_eyeglasses.xml")
+
+
+def _eyes_open(frame: np.ndarray, box, cascade) -> bool:
+    """Does the eye cascade find an eye in this frame's eye band?"""
+    x1, y1, x2, y2 = (float(v) for v in box)
+    w, h = x2 - x1, y2 - y1
+    fx1, fy1, fx2, fy2 = EYE_BAND
+    band = frame[int(y1 + h * fy1):int(y1 + h * fy2),
+                 int(x1 + w * fx1):int(x1 + w * fx2)]
+    if band.size == 0:
+        return False
+    grey = cv2.cvtColor(band, cv2.COLOR_BGR2GRAY)
+    grey = cv2.equalizeHist(grey)
+    # minSize keeps a nostril or a speck of hair from counting as an eye.
+    found = cascade.detectMultiScale(grey, scaleFactor=1.1, minNeighbors=5,
+                                     minSize=(max(8, band.shape[1] // 12),) * 2)
+    return len(found) > 0
+
+
+def blink(frames: list, box) -> tuple[str, float, str]:
+    """Did the person blink across this burst? Returns (verdict, confidence, why).
+
+    A printed photograph and a phone screen held up to the camera never blink;
+    a person in front of a counter does, within a second or two. That is the
+    whole idea, and it is why this is worth having next to the passive check -
+    the two fail to different attacks.
+
+    **`fail` is not returned for the absence of a blink.** People stare, a burst
+    can be short, and the cascade misses eyes on spectacles - so no blink is
+    `inconclusive` and the officer, who is standing there, remains the check. A
+    blink is positive evidence and nothing else is treated as evidence at all.
+    """
+    if not frames or len(frames) < MIN_FRAMES:
+        return ("inconclusive", 0.0,
+                f"Blink-based liveness needs at least {MIN_FRAMES} frames and "
+                f"this capture carried {len(frames) or 'none'}")
+
+    cascade = _eye_cascade()
+    if cascade.empty():
+        return ("inconclusive", 0.0,
+                "Blink-based liveness could not run - the eye cascade that "
+                "ships with OpenCV did not load")
+
+    width = float(box[2]) - float(box[0])
+    if width < MIN_FACE_PX:
+        return ("inconclusive", 0.0,
+                f"Blink-based liveness was not attempted - the face is "
+                f"{width:.0f} pixels wide and below {MIN_FACE_PX} px the eye "
+                f"detector flickers on a still image, which would read as a "
+                f"blink. Ask the traveller to step closer to the camera")
+
+    states = [_eyes_open(f, box, cascade) for f in frames]
+    open_frames = sum(states)
+    closed_frames = len(states) - open_frames
+
+    if open_frames < MIN_OPEN_FRAMES:
+        # Eyes were never convincingly found. That is a detector failure, not a
+        # traveller who kept their eyes shut, and it must not read as a spoof.
+        return ("inconclusive", 0.0,
+                f"Blink-based liveness could not run - the eyes were not "
+                f"visible in {len(states) - open_frames} of {len(states)} "
+                f"frames, so a blink could not be distinguished from a poor view")
+
+    if closed_frames == 0:
+        return ("inconclusive", 0.0,
+                f"No blink was seen across {len(states)} frames. That is not "
+                f"evidence of a spoof - people hold a stare - so it is recorded "
+                f"as unproven rather than failed")
+
+    # A blink is consecutive frames. Scattered closed frames are the detector
+    # losing the eyes and finding them again, and the size floor above does not
+    # make that impossible - only unlikely. Belt and braces, three lines.
+    if _longest_run(states, False) < 1 or not _brackets_a_run(states):
+        return ("inconclusive", 0.0,
+                f"The eyes were lost in {closed_frames} of {len(states)} frames "
+                f"but not in one continuous run bracketed by open frames, which "
+                f"is what a blink looks like. Recorded as unproven")
+
+    return ("pass", min(1.0, closed_frames / 2),
+            f"The person blinked while the camera was recording - eyes closed "
+            f"in {closed_frames} of {len(states)} frames. A printed photograph "
+            f"or a screen does not blink")
+
+
+def _longest_run(states: list[bool], value: bool) -> int:
+    longest = run = 0
+    for state in states:
+        run = run + 1 if state == value else 0
+        longest = max(longest, run)
+    return longest
+
+
+def _brackets_a_run(states: list[bool]) -> bool:
+    """Is there an open -> closed -> open transition? That is a blink.
+
+    Eyes closed at the very start or the very end of the burst could equally be
+    the camera catching someone mid-look-away, so they are not counted.
+    """
+    for i in range(1, len(states) - 1):
+        if not states[i] and states[i - 1]:
+            return any(states[i + 1:])
+    return False
