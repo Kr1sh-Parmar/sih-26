@@ -59,9 +59,21 @@ export function gradeCapture(
     {
       key: "resolution",
       label: "Resolution",
-      ok: shortEdge >= 700,
+      // 600, because that is what the pipeline actually enforces:
+      // `config/thresholds.yaml` sets `quality.min_short_edge_px: 600`. This
+      // said 700, so the console refused to screen documents the backend would
+      // have accepted - including every generated demo card, which is 1000x640.
+      // A gate that is stricter than the thing it guards does not add safety,
+      // it just makes the officer re-capture a document that was fine.
+      //
+      // The number is duplicated rather than fetched, and that is the standing
+      // risk: nothing stops the two drifting again. `quality.doc_blur_min` and
+      // SHARPNESS_MIN below are already apart (180 against 140) and are left
+      // alone deliberately - the two are not measured on the same scale, so
+      // aligning the digits would be a guess dressed as a fix.
+      ok: shortEdge >= 600,
       detail:
-        shortEdge >= 700
+        shortEdge >= 600
           ? `${q.width} by ${q.height} pixels`
           : `${q.width} by ${q.height} pixels. Move closer, or scan at a higher setting.`,
     },

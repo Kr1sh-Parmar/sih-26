@@ -1,0 +1,24 @@
+# The console's build context is `./frontend` (see docker-compose.yml), so the
+# repository-root .dockerignore does not apply here. Docker reads the
+# .dockerignore at the root of the context it was given, and nowhere else.
+#
+# Without this file `COPY . .` runs *after* `npm ci` and copies the host's
+# `node_modules` straight over the one the image just installed. The host is
+# Windows and the image is Alpine, so that replaces Linux binaries for esbuild
+# and rollup with Windows ones - a build that either fails confusingly or
+# succeeds with the wrong artefacts. It also shipped a few hundred megabytes to
+# the daemon on every build.
+node_modules/
+dist/
+
+# Never needed to build, and `npm run build` would not look at them anyway.
+.vite/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+
+# Editor and VCS noise.
+.git/
+.DS_Store

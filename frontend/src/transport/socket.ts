@@ -27,13 +27,22 @@ export async function startScreening(
   blob: Blob,
   docType: string,
   sessionId: string,
-  opts: { uploaded?: boolean } = {},
+  opts: { uploaded?: boolean; live?: Blob; liveFrames?: Blob[] } = {},
 ): Promise<StartedScreening> {
   const body = new FormData();
   body.append("image", blob, "capture.jpg");
   body.append("doc_type", docType);
   body.append("session_id", sessionId);
   body.append("uploaded", String(opts.uploaded ?? false));
+
+  // The camera path also supplies the person. `live` is the single best frame
+  // and drives 1:1 matching; `live_frames` is the short burst the blink check
+  // reads, appended under one repeated field name because that is what
+  // FastAPI binds to `list[UploadFile]`. A file upload sends neither.
+  if (opts.live) body.append("live", opts.live, "live.jpg");
+  for (const [i, frame] of (opts.liveFrames ?? []).entries()) {
+    body.append("live_frames", frame, `burst-${i}.jpg`);
+  }
 
   const response = await fetch(`${API}/screen`, { method: "POST", body });
   if (!response.ok) {

@@ -19,3 +19,18 @@ const LABEL: Record<string, string> = {
 export function docLabel(docType: string): string {
   return LABEL[docType] ?? docType;
 }
+
+/** The six, in the order an officer at a land border meets them. Aadhaar first
+ *  because it is the one most travellers actually carry; passport and visa
+ *  last because they are the ones with a machine-readable zone and are the
+ *  easiest to screen, not the most common. */
+export const DOC_TYPES = [
+  "aadhaar",
+  "voter_id",
+  "pan",
+  "dl",
+  "passport",
+  "visa",
+] as const;
+
+export type DocType = (typeof DOC_TYPES)[number];

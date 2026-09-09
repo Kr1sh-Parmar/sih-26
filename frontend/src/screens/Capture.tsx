@@ -20,7 +20,17 @@ import {
   type QualityReading,
 } from "../domain/quality";
 import { useSession } from "../store/session";
+import { useCapture } from "../store/capture";
+import { DOC_TYPES, docLabel } from "../domain/docType";
 import { cn } from "../lib/utils";
+
+/** Frames in the liveness burst, and the gap between them.
+ *
+ *  Five frames over ~1.4 s. A blink lasts 100-400 ms, so this is wide enough
+ *  to contain one and short enough that the traveller is not asked to hold
+ *  still. `modules/face/liveness.py` needs at least four to answer at all. */
+const BURST_FRAMES = 5;
+const BURST_GAP_MS = 280;
 
 const SOURCES: { key: CaptureSource; label: string; hint: string }[] = [
   { key: "scanner", label: "Scanner", hint: "Flatbed at the counter" },
@@ -54,16 +64,47 @@ export function Capture() {
   const documents = useSession((s) => s.documents);
 
   const [source, setSource] = useState<CaptureSource>("upload");
+  const [docType, setDocType] = useState<string>("aadhaar");
   const [preview, setPreview] = useState<string | null>(null);
   const [reading, setReading] = useState<QualityReading | null>(null);
+  const [busy, setBusy] = useState(false);
+  /** Whether the traveller has been photographed separately from the card.
+   *  Without it the screening still runs - the face comparison reports
+   *  `inconclusive`, which is honest - so this gates the label, not submit. */
+  const [liveTaken, setLiveTaken] = useState(false);
+  /** The officer said this traveller is not being photographed. Explicit,
+   *  because the alternative - a face check that quietly did not run - is the
+   *  failure this whole system is built to avoid. */
+  const [faceSkipped, setFaceSkipped] = useState(false);
+
+  const putCapture = useCapture((c) => c.put);
+  /** The bytes themselves, kept out of React state - a Blob does not belong in
+   *  a render cycle and nothing re-renders when it changes. */
+  const blobRef = useRef<Blob | null>(null);
+  const liveRef = useRef<Blob | null>(null);
+  const burstRef = useRef<Blob[]>([]);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  //  The camera used for the *traveller*, which is a different camera from the
+  //  one that may have taken the document. At a counter the document goes on
+  //  the glass and the person is photographed by the camera on the post; those
+  //  are two captures whatever hardware takes them.
+  const faceVideoRef = useRef<HTMLVideoElement>(null);
+  const faceStreamRef = useRef<MediaStream | null>(null);
+
   const gates = reading ? gradeCapture(reading, source) : [];
-  const canSubmit = gates.length > 0 && isSubmittable(gates);
+  const documentReady = gates.length > 0 && isSubmittable(gates);
+
+  //  Step two opens itself as soon as the document is accepted. The officer is
+  //  *asked* for the face rather than having to find a button for it - a check
+  //  nobody was prompted to run is a check that does not happen, and
+  //  `face.match.cosine` then reports `inconclusive` for the rest of time.
+  const askingForFace = documentReady && !liveTaken && !faceSkipped;
+  const canSubmit = documentReady && !busy && !askingForFace;
 
   /** Stop the camera whenever we leave it. A live webcam light at an
    *  unattended counter is its own kind of problem. */
@@ -107,6 +148,51 @@ export function Capture() {
     };
   }, [source, stopCamera]);
 
+  const stopFaceCamera = useCallback(() => {
+    faceStreamRef.current?.getTracks().forEach((t) => t.stop());
+    faceStreamRef.current = null;
+  }, []);
+
+  useEffect(() => stopFaceCamera, [stopFaceCamera]);
+
+  /** Open the camera for step two, and close it the moment step two is over.
+   *
+   *  Separate stream from the document camera rather than shared: the two are
+   *  never on at once (the document is captured before the traveller is asked
+   *  for), and sharing one `srcObject` across two elements loses the stream
+   *  when React moves the node. */
+  useEffect(() => {
+    if (!askingForFace) {
+      stopFaceCamera();
+      return;
+    }
+    let cancelled = false;
+    navigator.mediaDevices
+      ?.getUserMedia({ video: { width: 1280, height: 720 } })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        faceStreamRef.current = stream;
+        if (faceVideoRef.current) {
+          faceVideoRef.current.srcObject = stream;
+          void faceVideoRef.current.play();
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCameraError(
+            "No camera available for the live face. Screen the document without it — the face comparison will report that it could not run.",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+      stopFaceCamera();
+    };
+  }, [askingForFace, stopFaceCamera]);
+
   function acceptImage(img: HTMLImageElement | HTMLVideoElement, w: number, h: number, url: string) {
     setReading(measure(img, w, h));
     setPreview(url);
@@ -114,6 +200,11 @@ export function Capture() {
 
   function onFile(file: File | undefined) {
     if (!file) return;
+    blobRef.current = file;
+    liveRef.current = null;
+    burstRef.current = [];
+    setLiveTaken(false);
+    setFaceSkipped(false);
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => acceptImage(img, img.naturalWidth, img.naturalHeight, url);
@@ -121,19 +212,99 @@ export function Capture() {
     img.src = url;
   }
 
-  function grabFrame() {
-    const v = videoRef.current;
-    if (!v || !v.videoWidth) return;
+  /** One JPEG from a video element, at full sensor resolution. */
+  function frameBlob(quality = 0.92,
+                     element?: HTMLVideoElement | null): Promise<Blob | null> {
+    const v = element ?? videoRef.current;
+    if (!v || !v.videoWidth) return Promise.resolve(null);
     const canvas = document.createElement("canvas");
     canvas.width = v.videoWidth;
     canvas.height = v.videoHeight;
     canvas.getContext("2d")!.drawImage(v, 0, 0);
-    acceptImage(v, v.videoWidth, v.videoHeight, canvas.toDataURL("image/jpeg", 0.92));
+    return new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality),
+    );
+  }
+
+  /** The document frame. Only the document. */
+  async function grabFrame() {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth || busy) return;
+    setBusy(true);
+    try {
+      const doc = await frameBlob();
+      if (!doc) return;
+      blobRef.current = doc;
+      acceptImage(v, v.videoWidth, v.videoHeight, URL.createObjectURL(doc));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The traveller. A **separate** photograph, and that is the whole point.
+   *
+   *  It is tempting to reuse the document frame: at a counter one camera sees
+   *  a person holding their card, so the face and the document are in the same
+   *  picture. It would also be a guaranteed false match. `modules/face` locates
+   *  both the document portrait and the live face with `largest(detect(...))`
+   *  over the whole image, so handing it one frame twice makes it compare a
+   *  face to itself and return a cosine of 1.0 - evidence that is not
+   *  independent of what it claims to prove, which is the same failure as D48.
+   *
+   *  So: point the camera at the card, then at the person. Two photographs,
+   *  which is what 1:1 verification means.
+   *
+   *  The burst for the blink check rides on this action, not the document one,
+   *  for the same reason - it has to be frames of a face, not of a card. */
+  async function grabLive() {
+    const v = faceVideoRef.current;
+    if (!v || !v.videoWidth || busy) return;
+    setBusy(true);
+    try {
+      const live = await frameBlob(0.92, v);
+      if (!live) return;
+      liveRef.current = live;
+
+      const burst: Blob[] = [];
+      for (let i = 0; i < BURST_FRAMES; i++) {
+        // Lower quality: these are read for whether the eyes are open, never
+        // for a field value, and five full-quality frames is a slow upload on
+        // a checkpoint's connection.
+        const f = await frameBlob(0.7, v);
+        if (f) burst.push(f);
+        if (i < BURST_FRAMES - 1) {
+          await new Promise((r) => setTimeout(r, BURST_GAP_MS));
+        }
+      }
+      burstRef.current = burst;
+      setLiveTaken(true);
+    } finally {
+      setBusy(false);
+    }
   }
 
   function submit() {
-    if (!canSubmit) return;
-    if (documents.length === 0) startSession();
+    if (!canSubmit || !blobRef.current) return;
+    // **Deliberately does not start a session.** It used to call
+    // `startSession()` whenever the local document list looked empty, which is
+    // the normal state on this screen - so every capture minted a fresh
+    // `sessionId`, and the second document of a session was screened against
+    // an empty set of priors. Cross-document trust propagation is the headline
+    // of this system and it was silently switched off by a convenience call.
+    //
+    // A session ends when the officer says it does, not when a screen mounts.
+    // "New traveller" below is that control.
+    putCapture({
+      blob: blobRef.current,
+      docType,
+      source,
+      // The scanner writes the file itself, so its EXIF is clean by
+      // construction and the metadata checks would only produce noise
+      // (CLAUDE.md). A file handed over on a stick is a different story.
+      uploaded: source === "upload",
+      live: liveRef.current ?? undefined,
+      liveFrames: burstRef.current.length ? burstRef.current : undefined,
+    });
     navigate("/screening");
   }
 
@@ -144,15 +315,63 @@ export function Capture() {
         <h1 className="text-[length:var(--text-screen)] font-semibold">
           Capture the document
         </h1>
-        <p className="mt-1 text-iris-ink">
-          Session <span className="data">{sessionId}</span>
+        <p className="mt-1 flex flex-wrap items-center gap-x-2 text-iris-ink">
+          <span>
+            Session <span className="data">{sessionId}</span>
+          </span>
           {documents.length > 0 && (
             <>
-              <span className="mx-2 inline-block h-3 w-px translate-y-0.5 bg-iris" />
-              {documents.length} already screened in this session
+              <span className="inline-block h-3 w-px bg-iris" />
+              <span>
+                {documents.length} already screened — the next document is
+                checked against {documents.length === 1 ? "it" : "them"}
+              </span>
             </>
           )}
+          <span className="inline-block h-3 w-px bg-iris" />
+          <button
+            type="button"
+            onClick={() => {
+              startSession();
+              setPreview(null);
+              setReading(null);
+              blobRef.current = null;
+              liveRef.current = null;
+              burstRef.current = [];
+              setLiveTaken(false);
+            }}
+            className="underline underline-offset-2 hover:text-intaglio"
+          >
+            New traveller
+          </button>
         </p>
+
+        <div className="mt-6">
+          <h2 className="text-label uppercase tracking-wide text-iris-ink">
+            Document presented
+          </h2>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {DOC_TYPES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setDocType(t)}
+                aria-pressed={docType === t}
+                className={cn(
+                  "border px-3 py-1.5 transition-colors",
+                  docType === t
+                    ? "border-intaglio bg-intaglio text-paper"
+                    : "border-iris hover:bg-bloom",
+                )}
+              >
+                {docLabel(t)}
+              </button>
+            ))}
+          </div>
+          {/* The officer selects the type at the counter, so the backend
+              reports `not_applicable` for automatic classification rather
+              than a confidence it has not earned (CLAUDE.md). */}
+        </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
           {SOURCES.map((s) => (
@@ -163,6 +382,11 @@ export function Capture() {
                 setSource(s.key);
                 setPreview(null);
                 setReading(null);
+                blobRef.current = null;
+                liveRef.current = null;
+                burstRef.current = [];
+                setLiveTaken(false);
+                setFaceSkipped(false);
               }}
               className={cn(
                 "border px-4 py-2 text-left transition-colors",
@@ -222,7 +446,89 @@ export function Capture() {
             )}
           </div>
 
-          {cameraError && (
+          {/* ---------------------------------------------- step two: the face */}
+        {(askingForFace || liveTaken || faceSkipped) && (
+          <div className="mt-6 border border-iris bg-bloom/30 p-5">
+            <h2 className="text-label uppercase tracking-wide text-iris-ink">
+              Step 2 — the traveller
+            </h2>
+
+            {liveTaken ? (
+              <>
+                <p className="mt-2">
+                  Traveller photographed. Their face will be compared against
+                  the photo printed on the document.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    liveRef.current = null;
+                    burstRef.current = [];
+                    setLiveTaken(false);
+                  }}
+                  className="mt-3 border border-iris px-4 py-2 hover:bg-bloom"
+                >
+                  Retake
+                </button>
+              </>
+            ) : faceSkipped ? (
+              <>
+                <p className="mt-2">
+                  Screening without a live face. The comparison and the liveness
+                  check will report that they could not run — which is not the
+                  same as passing.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setFaceSkipped(false)}
+                  className="mt-3 border border-iris px-4 py-2 hover:bg-bloom"
+                >
+                  Photograph them after all
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="mt-2">
+                  The document is accepted. Now photograph the person presenting
+                  it — look at the camera.
+                </p>
+                <div className="mt-4 bg-intaglio p-4">
+                  <video
+                    ref={faceVideoRef}
+                    muted
+                    playsInline
+                    className="mx-auto max-h-[34vh] w-full object-contain"
+                  />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={grabLive}
+                    disabled={busy}
+                    className="bg-intaglio px-4 py-2 text-paper hover:bg-guilloche hover:text-intaglio disabled:opacity-60"
+                  >
+                    {busy ? "Hold still\u2026" : "Photograph the traveller"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFaceSkipped(true)}
+                    className="border border-iris px-4 py-2 hover:bg-bloom"
+                  >
+                    No traveller present — screen the document only
+                  </button>
+                </div>
+                <p className="mt-3 text-label text-iris-ink">
+                  Five frames are taken over about a second and a half, so the
+                  blink check has a sequence to read. It needs a face at least
+                  320 pixels wide — if the verdict says to step closer, that is
+                  the camera, not the traveller.
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
+        {cameraError && (
             <p className="mt-4 border border-dashed border-guilloche px-3 py-2 text-guilloche">
               {cameraError}
             </p>
@@ -241,9 +547,10 @@ export function Capture() {
               <button
                 type="button"
                 onClick={grabFrame}
-                className="bg-paper px-4 py-2 text-intaglio hover:bg-guilloche"
+                disabled={busy}
+                className="bg-paper px-4 py-2 text-intaglio hover:bg-guilloche disabled:opacity-60"
               >
-                Take the sharpest frame
+                {busy ? "Hold still\u2026" : "Photograph the document"}
               </button>
             ) : (
               <button
@@ -260,6 +567,11 @@ export function Capture() {
                 onClick={() => {
                   setPreview(null);
                   setReading(null);
+                  blobRef.current = null;
+                  liveRef.current = null;
+                  burstRef.current = [];
+                  setLiveTaken(false);
+                  setFaceSkipped(false);
                 }}
                 className="border border-bloom/50 px-4 py-2 text-paper hover:bg-bloom/20"
               >
@@ -300,7 +612,11 @@ export function Capture() {
                   : "cursor-not-allowed border border-iris text-iris-ink",
               )}
             >
-              {canSubmit ? "Screen this document" : "Re-capture before screening"}
+              {canSubmit
+                ? `Screen this ${docLabel(docType).toLowerCase()}`
+                : askingForFace
+                  ? "Photograph the traveller first"
+                  : "Re-capture before screening"}
             </button>
 
             {!canSubmit && (
