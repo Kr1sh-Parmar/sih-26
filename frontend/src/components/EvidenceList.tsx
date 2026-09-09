@@ -1,16 +1,5 @@
 /**
- * The evidence list — the exit gate for the whole project:
- *
- *   "A person who has never seen the system can read a RED verdict and say
- *    why."  (context/ROADMAP.md, Phase 4)
- *
- * Order comes from domain/ordering.ts, which implements CONTRACTS.md §7.
- * Trust class is carried by a mark and the weight of the rule beneath each
- * row, never by colour — colour belongs to the verdict.
- *
- * The one motion moment in the app lives here: as each row arrives its rule
- * draws left to right and the text sets behind it, so the list reads as a
- * record being written rather than a page appearing.
+ * The evidence list — the exit gate for the whole project.
  */
 import { useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -21,9 +10,15 @@ import { TrustMark } from "./marks/TrustMark";
 import { useScreening } from "../store/screening";
 import { cn } from "../lib/utils";
 
-/** Pull the two compared values out of an evidence string so they can be set
- *  in mono on their own lines. Scene 2 requires the officer to read both. */
 const PAIR = /^(.*?)\s([0-9]{4}-[0-9]{2}-[0-9]{2}|[A-Z0-9<]{6,})\s(.*?)\s([0-9]{4}-[0-9]{2}-[0-9]{2}|[A-Z0-9<]{6,})(.*)$/;
+
+/** Colored pill badge for trust class */
+const TRUST_BADGE: Record<string, string> = {
+  cryptographic: "bg-blue-50 text-blue-700 border border-blue-200",
+  arithmetic: "bg-slate-100 text-slate-600 border border-slate-200",
+  probabilistic: "bg-violet-50 text-violet-600 border border-violet-200",
+  unverified: "bg-orange-50 text-orange-600 border border-orange-200",
+};
 
 function EvidenceText({ text }: { text: string }) {
   const m = PAIR.exec(text);
@@ -33,24 +28,18 @@ function EvidenceText({ text }: { text: string }) {
     <>
       <span>{lead}</span>
       <span className="mt-1 block">
-        <span className="data">{a}</span>
+        <span className="data rounded bg-slate-100 px-1.5 py-0.5 text-sm">{a}</span>
       </span>
-      <span className="block text-iris-ink">{mid}</span>
+      <span className="block text-iris-ink text-sm">{mid}</span>
       <span className="block">
-        <span className="data">{b}</span>
+        <span className="data rounded bg-slate-100 px-1.5 py-0.5 text-sm">{b}</span>
       </span>
       {tail.trim() ? <span className="block">{tail.trim()}</span> : null}
     </>
   );
 }
 
-function Row({
-  row,
-  index,
-}: {
-  row: EvidenceRow;
-  index: number;
-}) {
+function Row({ row, index }: { row: EvidenceRow; index: number }) {
   const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
   const setActiveAnchor = useScreening((s) => s.setActiveAnchor);
@@ -62,49 +51,46 @@ function Row({
 
   return (
     <motion.li
-      initial={reduce ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.18, delay: reduce ? 0 : Math.min(index * 0.04, 0.4) }}
+      initial={reduce ? false : { opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, delay: reduce ? 0 : Math.min(index * 0.05, 0.4) }}
       className={cn(
-        "group relative pt-4 pb-4",
-        style.rule,
-        isActive && "bg-bloom/70",
+        "group rounded-[var(--radius-md)] border border-transparent px-4 py-4 transition-all",
+        isActive ? "border-guilloche/20 bg-guilloche/5" : "hover:bg-bloom/60 hover:border-iris/30",
       )}
       onMouseEnter={() => anchor && setActiveAnchor(anchor)}
       onMouseLeave={() => setActiveAnchor(null)}
       onFocus={() => anchor && setActiveAnchor(anchor)}
       onBlur={() => setActiveAnchor(null)}
     >
-      {/* the rule draws itself */}
-      {!reduce && (
-        <motion.span
-          aria-hidden
-          className="absolute -top-px left-0 h-px bg-paper"
-          initial={{ width: "100%" }}
-          animate={{ width: "0%" }}
-          transition={{ duration: 0.12, delay: Math.min(index * 0.04, 0.4) }}
-        />
-      )}
-
       <div className="flex gap-3">
+        {/* Trust mark in a small rounded icon container */}
         <span
-          className={cn("mt-1 shrink-0", mark === "cryptographic" ? "text-intaglio" : "text-iris-ink")}
+          className={cn(
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)]",
+            mark === "cryptographic"
+              ? "bg-blue-50 text-blue-700"
+              : mark === "arithmetic"
+                ? "bg-slate-100 text-slate-600"
+                : mark === "probabilistic"
+                  ? "bg-violet-50 text-violet-600"
+                  : "bg-orange-50 text-orange-500",
+          )}
           title={style.gloss}
         >
-          <TrustMark trust={mark} />
+          <TrustMark trust={mark} size={14} />
         </span>
 
         <div className="min-w-0 flex-1">
-          <p
-            className={cn(
-              "text-[length:var(--text-evidence)] leading-snug",
-              emphatic && "font-semibold",
-            )}
-          >
+          <p className={cn("leading-snug text-[length:var(--text-body)]", emphatic && "font-semibold text-intaglio")}>
             {body}
           </p>
 
-          <p className="mt-1 text-label text-iris-ink">{style.label}</p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", TRUST_BADGE[trust])}>
+              {style.label}
+            </span>
+          </div>
 
           {supporting.length > 0 && (
             <>
@@ -112,8 +98,9 @@ function Row({
                 type="button"
                 onClick={() => setOpen((v) => !v)}
                 aria-expanded={open}
-                className="mt-2 text-label text-iris-ink underline-offset-4 hover:underline"
+                className="mt-2 inline-flex items-center gap-1 text-label text-guilloche font-medium hover:underline underline-offset-4"
               >
+                <span className={cn("inline-block h-3 w-3 rounded-full border border-guilloche/50 text-center leading-none text-[9px] font-bold", open && "rotate-90 transition-transform")}>▶</span>
                 {open ? "Hide" : "Show"} {supporting.length} supporting{" "}
                 {supporting.length === 1 ? "check" : "checks"}
               </button>
@@ -124,14 +111,14 @@ function Row({
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.18 }}
-                    className="mt-2 overflow-hidden"
+                    className="mt-3 overflow-hidden space-y-1"
                   >
                     {supporting.map((s) => (
-                      <li key={s.id} className="flex gap-2 py-1 text-iris-ink">
+                      <li key={s.id} className="flex gap-2 rounded-[var(--radius-sm)] bg-bloom/50 px-3 py-2 text-iris-ink">
                         <span className="mt-0.5 shrink-0">
                           <TrustMark trust={s.trust_class} size={12} />
                         </span>
-                        <span>{s.evidence}</span>
+                        <span className="text-label">{s.evidence}</span>
                       </li>
                     ))}
                   </motion.ul>
@@ -153,10 +140,7 @@ function describe(row: EvidenceRow) {
         mark: row.signal.trust_class,
         anchor: row.signal.anchor,
         body: <EvidenceText text={row.signal.evidence} />,
-        // Corroboration for the same anchor rides along under the triangle.
-        supporting: (row.finding?.supporting ?? []).filter(
-          (s) => s.id !== row.signal.id,
-        ),
+        supporting: (row.finding?.supporting ?? []).filter((s) => s.id !== row.signal.id),
         emphatic: true,
       };
     case "finding":
@@ -202,25 +186,19 @@ function describe(row: EvidenceRow) {
   }
 }
 
-export function EvidenceList({
-  findings,
-  signals,
-}: {
-  findings: Finding[];
-  signals: Signal[];
-}) {
+export function EvidenceList({ findings, signals }: { findings: Finding[]; signals: Signal[] }) {
   const rows = orderEvidence(findings, signals);
 
   if (rows.length === 0) {
     return (
-      <p className="pt-4 text-iris-ink">
-        Nothing to report yet. Checks are still running.
-      </p>
+      <div className="mt-4 rounded-[var(--radius-md)] border border-iris/30 bg-bloom/40 px-5 py-8 text-center">
+        <p className="text-iris-ink">Nothing to report yet. Checks are still running.</p>
+      </div>
     );
   }
 
   return (
-    <ul className="mt-6">
+    <ul className="mt-3 -mx-4 divide-y divide-iris/20">
       {rows.map((row, i) => (
         <Row key={row.key} row={row} index={i} />
       ))}

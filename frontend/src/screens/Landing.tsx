@@ -11,7 +11,6 @@
  */
 import { Link } from "react-router-dom";
 import type { TrustClass } from "../contracts";
-import { TRUST_STYLE } from "../domain/trustClass";
 import { TrustMark } from "../components/marks/TrustMark";
 
 const LADDER: { trust: TrustClass; name: string; example: string; certainty: string }[] = [
@@ -72,8 +71,8 @@ function Section({
 }) {
   return (
     <section className="mx-auto w-full max-w-5xl px-8 py-16">
-      <h2 className="text-[length:var(--text-screen)] font-semibold">{title}</h2>
-      <div className="mt-2 border-t border-intaglio" />
+      <h2 className="text-[length:var(--text-screen)] font-semibold tracking-[-0.02em]">{title}</h2>
+      <div className="mt-3 h-px bg-iris/60" />
       {children}
     </section>
   );
@@ -87,12 +86,13 @@ export function Landing() {
     <div className="min-h-screen bg-paper">
       {/* ------------------------------------------------------------ hero */}
       <header className="bg-intaglio px-8 py-4 text-paper">
-        <div className="mx-auto flex max-w-5xl items-baseline gap-6">
-          <span className="font-semibold tracking-tight">Sashastra Seema Bal</span>
-          <span className="text-bloom/80">Identity document screening</span>
+        <div className="mx-auto flex max-w-5xl items-center gap-6">
+          <span className="text-[length:var(--text-evidence)] font-semibold tracking-[-0.02em]">Sashastra Seema Bal</span>
+          <span className="hidden sm:inline-block h-4 w-px bg-white/20" />
+          <span className="hidden sm:inline text-white/60">Identity document screening</span>
           <Link
             to="/capture"
-            className="ml-auto border border-bloom/50 px-4 py-1.5 text-label hover:bg-paper hover:text-intaglio"
+            className="ml-auto rounded-[var(--radius-md)] bg-guilloche px-5 py-2 text-label font-medium text-white hover:bg-guilloche/90 transition-colors"
           >
             Open the console
           </Link>
@@ -100,13 +100,13 @@ export function Landing() {
       </header>
 
       <div className="mx-auto w-full max-w-5xl px-8 pt-20 pb-4">
-        <p className="text-label text-iris-ink">
+        <p className="text-label font-medium text-guilloche tracking-wide uppercase">
           Smart India Hackathon 26188 — Ministry of Home Affairs
         </p>
-        <h1 className="mt-4 max-w-3xl text-[length:var(--text-verdict)] leading-[0.95] font-bold tracking-[-0.02em]">
+        <h1 className="mt-4 max-w-3xl text-[length:var(--text-verdict)] leading-[0.95] font-bold tracking-[-0.03em]">
           Three levels of certainty, and the officer is told which one.
         </h1>
-        <p className="mt-8 max-w-[38rem] text-[length:var(--text-evidence)] leading-relaxed">
+        <p className="mt-8 max-w-[38rem] text-[length:var(--text-evidence)] leading-relaxed text-iris-ink">
           A document screening system for land border checkpoints. It reads an
           identity document, checks it at three levels of certainty, looks for
           tampering, matches the holder's face, and hands the officer a verdict
@@ -117,11 +117,11 @@ export function Landing() {
 
       {/* The ladder is the product. It goes first, before anything else. */}
       <div className="mx-auto w-full max-w-5xl px-8 pb-20">
-        <ol className="mt-10">
+        <ol className="mt-10 grid gap-4">
           {LADDER.map((row) => (
             <li
               key={row.trust}
-              className={`grid grid-cols-[2rem_10rem_1fr] items-baseline gap-x-5 py-5 ${TRUST_STYLE[row.trust].rule}`}
+              className="grid grid-cols-[2.5rem_10rem_1fr] items-baseline gap-x-5 rounded-[var(--radius-lg)] border border-iris/40 bg-bloom/50 px-6 py-5 transition-colors hover:bg-bloom"
             >
               <span
                 className={
@@ -130,7 +130,7 @@ export function Landing() {
               >
                 <TrustMark trust={row.trust} size={22} />
               </span>
-              <span className="text-[length:var(--text-evidence)] font-medium">
+              <span className="text-[length:var(--text-evidence)] font-semibold">
                 {row.name}
               </span>
               <span>
@@ -152,21 +152,21 @@ export function Landing() {
       </div>
 
       {/* ---------------------------------------------------------- budget */}
-      <div className="bg-bloom/40">
+      <div className="bg-bloom/60">
         <Section title="Where the second goes">
-          <p className="mt-6 max-w-[38rem]">
+          <p className="mt-6 max-w-[38rem] text-iris-ink">
             Measured on an eight-core CPU with no GPU. Deterministic checks run
             first, so a hard failure returns before the vision stack is touched.
             Deep forensics fire only when the risk gate escalates, which is
             about fifteen per cent of documents.
           </p>
 
-          <ul className="mt-8">
+          <ul className="mt-8 space-y-1">
             {PIPELINE.map((s) => (
-              <li key={s.stage} className="flex items-center gap-4 py-1.5">
-                <span className="w-72 shrink-0">{s.stage}</span>
+              <li key={s.stage} className="flex items-center gap-4 py-2">
+                <span className="w-72 shrink-0 text-[length:var(--text-body)]">{s.stage}</span>
                 <span
-                  className="h-3 bg-iris"
+                  className="h-3 rounded-full bg-guilloche/70"
                   style={{ width: `${(s.ms / widest) * 100}%`, maxWidth: "22rem" }}
                 />
                 <span className="data text-label text-iris-ink">{s.ms} ms</span>
@@ -174,25 +174,27 @@ export function Landing() {
             ))}
           </ul>
 
-          <p className="mt-6 border-t border-intaglio pt-3">
-            <span className="data text-[length:var(--text-evidence)]">
+          <div className="mt-6 border-t border-iris/60 pt-4">
+            <span className="data text-[length:var(--text-evidence)] font-semibold">
               {total} ms
             </span>{" "}
-            for the tier that runs on every document. The first verdict is on
-            screen well before that, because results stream as each module
-            finishes.
-          </p>
+            <span className="text-iris-ink">
+              for the tier that runs on every document. The first verdict is on
+              screen well before that, because results stream as each module
+              finishes.
+            </span>
+          </div>
         </Section>
       </div>
 
       {/* ---------------------------------------------------------- limits */}
       <Section title="What it does not do">
-        <p className="mt-6 max-w-[38rem]">
+        <p className="mt-6 max-w-[38rem] text-iris-ink">
           Stated here rather than waiting to be asked.
         </p>
-        <ul className="mt-6 max-w-[42rem] space-y-5">
+        <ul className="mt-6 max-w-[42rem] grid gap-4">
           {LIMITS.map((l) => (
-            <li key={l} className="border-t border-dashed border-iris pt-4">
+            <li key={l} className="rounded-[var(--radius-md)] border border-iris/40 bg-bloom/30 p-5 text-iris-ink">
               {l}
             </li>
           ))}
@@ -208,7 +210,7 @@ export function Landing() {
           </p>
           <Link
             to="/capture"
-            className="mt-8 inline-block bg-paper px-6 py-3 text-intaglio hover:bg-guilloche"
+            className="mt-8 inline-block rounded-[var(--radius-md)] bg-guilloche px-6 py-3 font-medium text-white hover:bg-guilloche/90 transition-colors"
           >
             Open the console
           </Link>

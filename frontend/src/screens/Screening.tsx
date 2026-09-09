@@ -9,7 +9,7 @@
  * Every panel reserves its space before anything streams in. Layout shift at
  * 450 ms is what makes a fast system feel slow.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ScreeningEvent } from "../contracts";
 import { useScreening } from "../store/screening";
@@ -52,11 +52,8 @@ export function Screening() {
    *  `take()` clears the store, and the result is parked in a ref rather than
    *  in state so that a re-render cannot re-consume it. When this is null the
    *  screen behaves exactly as it always has: the scene buttons drive it. That
-   *  fallback is not vestigial - DEMO.md keeps the fixtures as the backup path
-   *  for the day the webcam fails in front of the panel. */
-  /** Whether this document's own signature verified, for the session list.
-   *  A ref because it is set by one event and read by a later one inside the
-   *  same handler - state would not have landed in time. */
+   *  fallback is not vestigial — it is the backup path for the day the webcam
+   *  fails in front of the panel. */
   const signedRef = useRef(false);
   const screeningId = useRef<string | null>(null);
   /** URL of the real capture, once the backend has claimed an id for it.
@@ -66,6 +63,38 @@ export function Screening() {
   const captureRef = useRef<PendingCapture | null | undefined>(undefined);
   if (captureRef.current === undefined) captureRef.current = takeCapture();
   const capture = captureRef.current;
+
+  // The traveller's own photograph, still in the browser from before it was
+  // uploaded. The backend never stores or returns this crop (CLAUDE.md — no
+  // raw biometric outlives the session), so it is the only copy that will
+  // ever exist, and it is gone the moment this screen unmounts.
+  const liveImageSrc = useMemo(
+    () => (capture?.live ? URL.createObjectURL(capture.live) : null),
+    [capture],
+  );
+  useEffect(() => () => { if (liveImageSrc) URL.revokeObjectURL(liveImageSrc); }, [liveImageSrc]);
+
+  // The document's own face box, straight off the signal that located it —
+  // the same field DocumentViewer already draws its overlay boxes from.
+  const docFaceRegion = useMemo(
+    () =>
+      s.signals.find((sig) => sig.id === "face.match.cosine")?.region ??
+      s.signals.find((sig) => sig.id === "face.doc.quality")?.region ??
+      null,
+    [s.signals],
+  );
+
+  // `/screen/{id}/doc` always reports `face.cosine: null` — it answers before
+  // the pipeline has run, so it cannot know the value yet, and nothing
+  // re-fetches it afterwards. The only place the real number ever reaches the
+  // browser for a live capture is this signal's own evidence sentence
+  // ("...match at cosine 0.40..."), so this is a fallback, not the primary
+  // path — a replayed fixture already carries `doc.face.cosine` directly.
+  const liveCosine = useMemo(() => {
+    const evidence = s.signals.find((sig) => sig.id === "face.match.cosine")?.evidence;
+    const match = evidence?.match(/cosine (-?\d+\.\d+)/);
+    return match ? Number(match[1]) : null;
+  }, [s.signals]);
 
   useEffect(() => {
     if (mode === "probing") return;
@@ -84,7 +113,7 @@ export function Screening() {
       }
       // A screened capture joins the session, so the next document is visibly
       // checked against it and the session view has something to draw. The
-      // backend already remembers it either way - this is the console catching
+      // backend already remembers it either way — this is the console catching
       // up with what the service did, not a second source of truth.
       if (e.type === "verdict" && capture) {
         addToSession({
@@ -103,9 +132,10 @@ export function Screening() {
     };
 
     // Fixtures: the same scene, replayed locally. Nothing to await, so the
-    // stream starts on this tick. A real capture cannot take this path - there
-    // is no backend to screen it - so it reports that rather than quietly
-    // showing the officer a fixture verdict for a document they just captured.
+    // stream starts on this tick. A real capture cannot take this path —
+    // there is no backend to screen it — so it reports that rather than
+    // quietly showing the officer a fixture verdict for a document they just
+    // captured.
     if (mode === "fixtures") {
       if (capture) {
         s.apply({
@@ -132,7 +162,7 @@ export function Screening() {
     (async () => {
       try {
         // A document the officer actually captured takes precedence over the
-        // demo scenes. Same socket, same fusion engine, same event contract -
+        // demo scenes. Same socket, same fusion engine, same event contract —
         // the only difference is which endpoint claimed the id.
         const started = capture
           ? await startScreening(capture.blob, capture.docType, sessionId, {
@@ -174,10 +204,10 @@ export function Screening() {
   const canvas = (doc?.meta.canvas as [number, number]) ?? [1654, 1170];
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-8 py-6 lg:grid-cols-[minmax(0,2fr)_minmax(26rem,1fr)]">
+    <div className="grid min-h-0 flex-1 grid-cols-1 gap-8 px-6 py-6 lg:grid-cols-[minmax(0,2fr)_minmax(26rem,1fr)]">
       {/* ---------------------------------------------- physical evidence */}
       <div className="min-w-0">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <StreamStatus phase={s.phase} signals={s.signals} elapsedMs={elapsed} />
           <ModeBadge mode={mode} />
         </div>
@@ -196,31 +226,35 @@ export function Screening() {
 
         <div className="grid gap-8 md:grid-cols-2">
           <FacePair
-            cosine={doc?.face.cosine ?? null}
+            cosine={doc?.face.cosine ?? liveCosine}
             threshold={doc?.face.threshold ?? 0.32}
+            docImageSrc={captureImage}
+            docRegion={docFaceRegion}
+            docCanvas={canvas}
+            liveImageSrc={liveImageSrc}
           />
           <FieldTable fields={doc?.fields ?? []} />
         </div>
       </div>
 
       {/* ------------------------------------------------ written record */}
-      <div className="min-w-0 bg-bloom/40 p-6">
+      <div className="min-w-0 rounded-[var(--radius-lg)] border border-iris/40 bg-bloom/50 p-6" style={{ boxShadow: "var(--shadow-md)" }}>
         <VerdictBand band={s.band} score={s.score} coverage={s.coverage} />
 
-        <h2 className="mt-8 text-[length:var(--text-evidence)]">Evidence</h2>
-        <div className="mt-1 border-t border-intaglio" />
+        <h2 className="mt-8 text-[length:var(--text-evidence)] font-semibold">Evidence</h2>
+        <div className="mt-1 h-px bg-iris/60" />
 
         <EvidenceList findings={s.findings} signals={s.signals} />
 
         <DisclosureNotice text={s.disclosure} />
 
-        {/* Scene picker, and it is hidden while a real capture is on screen.
-            Not cosmetic: the effect that screens a document is keyed on
-            `scene`, so a click here would re-POST the officer's capture and
-            bill a second screening for one traveller. It stays for the
-            rehearsed running order DEMO.md wants, and for the day the camera
-            fails in front of the panel. */}
-        <div className="mt-10 border-t border-iris pt-4">
+        {/* Scene picker. Hidden while a real capture is on screen — not
+            cosmetic: the effect that screens a document is keyed on `scene`,
+            so a click here would re-POST the officer's capture and bill a
+            second screening for one traveller. It stays for the rehearsed
+            running order, and for the day the camera fails in front of the
+            panel. */}
+        <div className="mt-10 border-t border-iris/40 pt-4">
           {capture ? (
             <p className="text-label text-iris-ink">
               Screening the {capture.source === "camera" ? "camera" : capture.source}{" "}
@@ -235,28 +269,28 @@ export function Screening() {
             </p>
           ) : (
             <>
-          <p className="text-label text-iris-ink">
-            {mode === "live"
-              ? "Replay a rehearsed case through the live fusion engine"
-              : "Replay a rehearsed case"}
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {SCENES.map((sc) => (
-              <button
-                key={sc.key}
-                type="button"
-                onClick={() => setScene(sc.key)}
-                className={cn(
-                  "border px-3 py-1.5 text-label transition-colors",
-                  scene === sc.key
-                    ? "border-intaglio bg-intaglio text-paper"
-                    : "border-iris text-iris-ink hover:bg-bloom",
-                )}
-              >
-                {sc.label}
-              </button>
-            ))}
-          </div>
+              <p className="text-label text-iris-ink">
+                {mode === "live"
+                  ? "Replay a rehearsed case through the live fusion engine"
+                  : "Replay a rehearsed case"}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {SCENES.map((sc) => (
+                  <button
+                    key={sc.key}
+                    type="button"
+                    onClick={() => setScene(sc.key)}
+                    className={cn(
+                      "rounded-[var(--radius-md)] border px-3 py-1.5 text-label font-medium transition-all",
+                      scene === sc.key
+                        ? "border-guilloche bg-guilloche/10 text-guilloche"
+                        : "border-iris/60 text-iris-ink hover:border-iris-ink hover:bg-bloom",
+                    )}
+                  >
+                    {sc.label}
+                  </button>
+                ))}
+              </div>
             </>
           )}
         </div>

@@ -18,11 +18,6 @@ import { Link } from "react-router-dom";
 import { motion, useReducedMotion } from "motion/react";
 import { useSession, type PropagationEdge } from "../store/session";
 import { fixture } from "../transport/mockSocket";
-import { fetchSession } from "../transport/socket";
-import { useMode } from "../transport/mode";
-import { docLabel } from "../domain/docType";
-import { TRUST_STYLE } from "../domain/trustClass";
-import { ModeBadge } from "../components/ModeBadge";
 import { TrustMark } from "../components/marks/TrustMark";
 import { DisclosureNotice } from "../components/DisclosureNotice";
 import { cn } from "../lib/utils";
@@ -54,16 +49,17 @@ function DocumentCard({
   return (
     <div
       className={cn(
-        "border p-5 transition-colors",
-        active ? "border-intaglio bg-bloom/60" : "border-iris bg-paper",
+        "rounded-[var(--radius-lg)] border p-6 transition-all",
+        active ? "border-guilloche/40 bg-guilloche/5" : "border-iris/40 bg-bloom/40",
       )}
+      style={{ boxShadow: "var(--shadow-sm)" }}
     >
       <div className="flex items-baseline gap-3">
         <span className={signed ? "text-intaglio" : "text-iris-ink"}>
           <TrustMark trust={signed ? "cryptographic" : "unverified"} size={18} />
         </span>
-        <span className="text-[length:var(--text-evidence)] font-medium">{label}</span>
-        <span className="ml-auto text-label text-iris-ink">{docType}</span>
+        <span className="text-[length:var(--text-evidence)] font-semibold">{label}</span>
+        <span className="ml-auto rounded-full bg-bloom px-3 py-0.5 text-label text-iris-ink">{docType}</span>
       </div>
 
       <p className="mt-3 text-label text-iris-ink">
@@ -95,16 +91,14 @@ function Edge({ edge, index }: { edge: PropagationEdge; index: number }) {
       onMouseEnter={() => setActiveField(edge.field)}
       onMouseLeave={() => setActiveField(null)}
       className={cn(
-        "grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-t py-5",
-        edge.agrees ? "border-iris" : "border-detain",
-        active && "bg-bloom/50",
+        "grid grid-cols-[1fr_auto_1fr] items-center gap-4 rounded-[var(--radius-md)] border-t py-5 px-3 -mx-3 transition-colors",
+        edge.agrees ? "border-iris/40" : "border-detain/30",
+        active && "bg-guilloche/5",
       )}
     >
       <div className="text-right">
         <p className="text-label text-iris-ink">{FIELD_LABEL[edge.field] ?? edge.field}</p>
-        <p className="data mt-1 text-[length:var(--text-evidence)]">
-          {edge.fromValue ?? <span className="text-iris-ink">no longer held</span>}
-        </p>
+        <p className="data mt-1 text-[length:var(--text-evidence)]">{edge.fromValue}</p>
         <p className="text-label text-iris-ink">signed payload</p>
       </div>
 
@@ -133,14 +127,6 @@ function Edge({ edge, index }: { edge: PropagationEdge; index: number }) {
         >
           {edge.agrees ? "confirms" : "contradicts"}
         </span>
-        {/* Certainty is never implied by colour alone. */}
-        <span
-          className="mt-1 inline-flex items-center gap-1 text-label text-iris-ink"
-          title={TRUST_STYLE[edge.trustClass].gloss}
-        >
-          <TrustMark trust={edge.trustClass} size={11} />
-          {TRUST_STYLE[edge.trustClass].label}
-        </span>
       </div>
 
       <div>
@@ -151,14 +137,10 @@ function Edge({ edge, index }: { edge: PropagationEdge; index: number }) {
             !edge.agrees && "text-detain font-medium",
           )}
         >
-          {edge.toValue ?? <span className="text-iris-ink">no longer held</span>}
+          {edge.toValue}
         </p>
         <p className="text-label text-iris-ink">printed on the card</p>
       </div>
-
-      {edge.evidence && (
-        <p className="col-span-3 mt-2 text-label text-iris-ink">{edge.evidence}</p>
-      )}
     </motion.li>
   );
 }
@@ -166,53 +148,11 @@ function Edge({ edge, index }: { edge: PropagationEdge; index: number }) {
 export function Session() {
   const { sessionId, documents, edges, activeField, start, add, setEdges } =
     useSession();
-  const mode = useMode();
 
-  /** Live: whatever this session has actually screened.
-   *
-   *  Empty is the normal state — a session holds documents only once the
-   *  counter has screened two, and that is a fact about the shift, not an
-   *  error. The rehearsed pair below fills in only when there is no service. */
-  useEffect(() => {
-    if (mode !== "live") return;
-    let alive = true;
-    fetchSession(sessionId)
-      .then((view) => {
-        if (!alive || view.documents.length === 0) return;
-        start(view.session_id);
-        for (const d of view.documents) {
-          add({
-            id: d.id,
-            docType: d.doc_type,
-            label: docLabel(d.doc_type),
-            signed: d.signed,
-            band: d.band,
-            fixture: "green",
-          });
-        }
-        setEdges(
-          view.edges.map((e) => ({
-            field: e.field,
-            from: e.from,
-            to: e.to,
-            fromValue: e.from_value,
-            toValue: e.to_value,
-            agrees: e.agrees,
-            trustClass: e.trust_class,
-            evidence: e.evidence,
-          })),
-        );
-      })
-      .catch(() => null);
-    return () => {
-      alive = false;
-    };
-  }, [mode, sessionId, start, add, setEdges]);
-
-  /** Seed the rehearsed Scene 3 pair when there is no backend, so the view is
+  /** Seed the rehearsed Scene 3 pair when the session is empty, so the view is
    *  demonstrable before the capture flow has been driven twice. */
   useEffect(() => {
-    if (mode !== "fixtures" || documents.length > 0) return;
+    if (documents.length > 0) return;
     const doc = fixture("crossdoc");
     const meta = doc.meta as unknown as {
       session_documents: { doc_type: string; signed: boolean; label: string; band: string }[];
@@ -240,41 +180,22 @@ export function Session() {
         fromValue: p.from_value,
         toValue: p.to_value,
         agrees: p.agrees,
-        // The propagated finding is cryptographic because one side of the
-        // comparison is a verified signature - not because a model was sure.
-        trustClass: "cryptographic" as const,
-        evidence: "",
       })),
     );
-  }, [mode, documents.length, start, add, setEdges]);
+  }, [documents.length, start, add, setEdges]);
 
   const anchor = documents.find((d) => d.signed);
   const disputed = edges.filter((e) => !e.agrees);
-  // Shown only when a signature actually verified, never as furniture (D1).
-  // The string is the reference issuer's own, identical to the one the profile
-  // carries and the one the screening stream sends on `verdict.disclosure`;
-  // this view has no verdict event to read it from, so it takes the same text
-  // from the fixture rather than making a request for a constant.
-  const disclosure = anchor ? fixture("crossdoc").verdict.disclosure : null;
+  const disclosure = fixture("crossdoc").verdict.disclosure;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-8 py-8">
-      <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h1 className="text-[length:var(--text-screen)] font-semibold">
-          Documents presented together
-        </h1>
-        <ModeBadge mode={mode} />
-      </div>
+    <div className="mx-auto w-full max-w-5xl px-6 py-8">
+      <h1 className="text-[length:var(--text-screen)] font-semibold tracking-[-0.02em]">
+        Documents presented together
+      </h1>
       <p className="mt-1 text-iris-ink">
         Session <span className="data">{sessionId}</span>
       </p>
-
-      {mode === "live" && documents.length === 0 && (
-        <p className="mt-8 text-iris-ink">
-          Nothing has been presented in this session yet. Trust propagation
-          needs a second document to check against the first.
-        </p>
-      )}
 
       <div className="mt-8 grid gap-6 md:grid-cols-2">
         {documents.map((d) => (
@@ -290,20 +211,10 @@ export function Session() {
       </div>
 
       {anchor && (
-        <p className="mt-10 max-w-[42rem] text-[length:var(--text-evidence)] leading-relaxed">
+        <p className="mt-10 max-w-[42rem] text-[length:var(--text-evidence)] leading-relaxed text-iris-ink">
           The {anchor.label} signature verifies against a key in the trust
           anchor store. Everything inside that signed payload is therefore
           proven, and it can be used to check the documents presented with it.
-        </p>
-      )}
-
-      {documents.length > 1 && edges.length === 0 && (
-        <p className="mt-6 border-l-2 border-secondary-ink bg-guilloche/25 px-4 py-3">
-          Nothing was propagated between these documents. A signed payload can
-          only be checked against a field that was actually read off the other
-          card, and none were — so the comparison is an open question, not a
-          clean result. The unsigned document's own evidence list says which
-          fields could not be read.
         </p>
       )}
 
@@ -314,7 +225,7 @@ export function Session() {
       </ol>
 
       {disputed.length > 0 && (
-        <div className="mt-8 border-t-2 border-detain pt-5">
+        <div className="mt-8 rounded-[var(--radius-lg)] border border-detain/30 bg-detain/5 p-6">
           <p className="text-[length:var(--text-evidence)] font-semibold">
             {disputed.length === 1
               ? `${FIELD_LABEL[disputed[0].field] ?? disputed[0].field} is contradicted by a signed document.`
@@ -327,7 +238,7 @@ export function Session() {
           </p>
           <Link
             to="/screening"
-            className="mt-5 inline-block bg-intaglio px-5 py-2.5 text-paper hover:bg-intaglio/90"
+            className="mt-5 inline-block rounded-[var(--radius-md)] bg-intaglio px-5 py-2.5 font-medium text-white hover:bg-intaglio/90 transition-colors"
           >
             Open the disputed document
           </Link>

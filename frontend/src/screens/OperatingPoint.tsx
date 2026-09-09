@@ -27,8 +27,8 @@ import {
 } from "../domain/operatingPoint";
 import { cn } from "../lib/utils";
 
-const FAR_INK = "#A3123A"; // impostor admitted — the serious one
-const FRR_INK = "#6B4E8F"; // genuine traveller stopped
+const FAR_INK = "#DC2626"; // impostor admitted — the serious one
+const FRR_INK = "#7C3AED"; // genuine traveller stopped
 
 const W = 720;
 const H = 320;
@@ -71,8 +71,8 @@ export function OperatingPoint() {
   const readT = hoverT ?? faceThreshold;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-8 py-8">
-      <h1 className="text-[length:var(--text-screen)] font-semibold">
+    <div className="mx-auto w-full max-w-5xl px-6 py-8">
+      <h1 className="text-[length:var(--text-screen)] font-semibold tracking-[-0.02em]">
         Operating point
       </h1>
       <p className="mt-1 max-w-[42rem] text-iris-ink">
@@ -82,14 +82,14 @@ export function OperatingPoint() {
       </p>
 
       {/* The consequence, in people. This is what the number means. */}
-      <div className="mt-8 grid gap-6 sm:grid-cols-3">
-        <div className="border-t-2 border-intaglio pt-4">
-          <p className="data text-[length:var(--text-verdict)] leading-none">
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        <div className="rounded-[var(--radius-lg)] border border-iris/40 bg-bloom/40 p-5" style={{ boxShadow: "var(--shadow-sm)" }}>
+          <p className="data text-[length:var(--text-verdict)] leading-none text-intaglio">
             {faceThreshold.toFixed(2)}
           </p>
           <p className="mt-2 text-label text-iris-ink">cosine threshold</p>
         </div>
-        <div className="border-t-2 pt-4" style={{ borderColor: FRR_INK }}>
+        <div className="rounded-[var(--radius-lg)] border p-5" style={{ borderColor: FRR_INK + "40", boxShadow: "var(--shadow-sm)" }}>
           <p className="data text-[length:var(--text-verdict)] leading-none" style={{ color: FRR_INK }}>
             {now.stopped}
           </p>
@@ -97,7 +97,7 @@ export function OperatingPoint() {
             genuine travellers sent to secondary inspection, per day
           </p>
         </div>
-        <div className="border-t-2 pt-4" style={{ borderColor: FAR_INK }}>
+        <div className="rounded-[var(--radius-lg)] border p-5" style={{ borderColor: FAR_INK + "40", boxShadow: "var(--shadow-sm)" }}>
           <p className="data text-[length:var(--text-verdict)] leading-none" style={{ color: FAR_INK }}>
             {now.admitted}
           </p>
@@ -113,18 +113,18 @@ export function OperatingPoint() {
       </p>
 
       {/* --------------------------------------------------------- the curve */}
-      <figure className="mt-10">
+      <figure className="mt-10 rounded-[var(--radius-lg)] border border-iris/40 bg-bloom/30 p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
         <figcaption className="flex flex-wrap items-center gap-6">
-          <span className="text-[length:var(--text-evidence)]">
+          <span className="text-[length:var(--text-evidence)] font-semibold">
             How the two errors trade off
           </span>
           <span className="ml-auto flex gap-5 text-label">
             <span className="inline-flex items-center gap-2">
-              <span className="h-0.5 w-5" style={{ background: FRR_INK }} />
+              <span className="h-0.5 w-5 rounded-full" style={{ background: FRR_INK }} />
               <span className="text-intaglio">Genuine stopped (FRR)</span>
             </span>
             <span className="inline-flex items-center gap-2">
-              <span className="h-0.5 w-5" style={{ background: FAR_INK }} />
+              <span className="h-0.5 w-5 rounded-full" style={{ background: FAR_INK }} />
               <span className="text-intaglio">Impostor admitted (FAR)</span>
             </span>
           </span>
@@ -150,7 +150,7 @@ export function OperatingPoint() {
                 y2={y(v)}
                 stroke="var(--color-iris)"
                 strokeWidth="0.5"
-                opacity="0.6"
+                opacity="0.5"
               />
               <text
                 x={PAD.l - 8}
@@ -247,7 +247,7 @@ export function OperatingPoint() {
 
       {/* keyboard control, because a chart you can only drag is not usable */}
       <label className="mt-8 block">
-        <span className="text-label text-iris-ink">Threshold</span>
+        <span className="text-label font-medium text-iris-ink">Threshold</span>
         <input
           type="range"
           min={0}
@@ -255,69 +255,71 @@ export function OperatingPoint() {
           step={0.005}
           value={faceThreshold}
           onChange={(e) => set({ faceThreshold: Number(e.target.value) })}
-          className="mt-2 w-full accent-[#3a2e45]"
+          className="mt-2 w-full accent-guilloche"
         />
       </label>
 
       <button
         type="button"
         onClick={() => setShowTable((v) => !v)}
-        className="mt-4 text-label text-iris-ink underline-offset-4 hover:underline"
+        className="mt-4 text-label text-guilloche font-medium underline-offset-4 hover:underline"
       >
         {showTable ? "Hide" : "Show"} the same numbers as a table
       </button>
 
       {showTable && (
-        <table className="mt-4 w-full max-w-xl">
-          <thead>
-            <tr className="border-b border-intaglio text-left text-label text-iris-ink">
-              <th className="py-2 font-medium">Threshold</th>
-              <th className="py-2 font-medium">Genuine stopped</th>
-              <th className="py-2 font-medium">Impostors admitted</th>
-              <th className="py-2 font-medium">Per day</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[0.1, 0.2, 0.25, 0.32, 0.4, 0.5, 0.6].map((t) => {
-              const c = dailyConsequence(t, dailyVolume);
-              return (
-                <tr
-                  key={t}
-                  className={cn(
-                    "border-b border-iris/50 data",
-                    Math.abs(t - faceThreshold) < 0.005 && "bg-bloom/70",
-                  )}
-                >
-                  <td className="py-2">{t.toFixed(2)}</td>
-                  <td className="py-2">{pct(frr(t))}</td>
-                  <td className="py-2">{pct(far(t))}</td>
-                  <td className="py-2">
-                    {c.stopped} stopped, {c.admitted} admitted
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="mt-4 rounded-[var(--radius-md)] border border-iris/40 overflow-hidden">
+          <table className="w-full max-w-xl">
+            <thead>
+              <tr className="border-b border-iris/40 bg-bloom/50 text-left text-label text-iris-ink">
+                <th className="py-2.5 pl-4 font-medium">Threshold</th>
+                <th className="py-2.5 font-medium">Genuine stopped</th>
+                <th className="py-2.5 font-medium">Impostors admitted</th>
+                <th className="py-2.5 pr-4 font-medium">Per day</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[0.1, 0.2, 0.25, 0.32, 0.4, 0.5, 0.6].map((t) => {
+                const c = dailyConsequence(t, dailyVolume);
+                return (
+                  <tr
+                    key={t}
+                    className={cn(
+                      "border-b border-iris/30 data",
+                      Math.abs(t - faceThreshold) < 0.005 && "bg-guilloche/10",
+                    )}
+                  >
+                    <td className="py-2.5 pl-4">{t.toFixed(2)}</td>
+                    <td className="py-2.5">{pct(frr(t))}</td>
+                    <td className="py-2.5">{pct(far(t))}</td>
+                    <td className="py-2.5 pr-4">
+                      {c.stopped} stopped, {c.admitted} admitted
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* ------------------------------------------------ the other dials */}
       <section className="mt-14">
-        <h2 className="text-[length:var(--text-evidence)]">Verdict bands</h2>
-        <div className="mt-1 border-t border-intaglio" />
+        <h2 className="text-[length:var(--text-evidence)] font-semibold">Verdict bands</h2>
+        <div className="mt-2 h-px bg-iris/60" />
         <p className="mt-4 max-w-[42rem] text-iris-ink">
           Changing any of these re-scores every historical event from its stored
           signals. Nothing is re-inferred, so the audit trail stays comparable.
         </p>
 
-        <div className="mt-6 grid gap-6 sm:grid-cols-3">
+        <div className="mt-6 grid gap-4 sm:grid-cols-3">
           {[
             { key: "amberAt" as const, label: "Secondary above", value: amberAt },
             { key: "redAt" as const, label: "Detain above", value: redAt },
             { key: "coverageFloor" as const, label: "Coverage floor", value: coverageFloor },
           ].map((f) => (
             <label key={f.key} className="block">
-              <span className="text-label text-iris-ink">{f.label}</span>
+              <span className="text-label font-medium text-iris-ink">{f.label}</span>
               <input
                 type="number"
                 min={0}
@@ -325,21 +327,21 @@ export function OperatingPoint() {
                 step={0.01}
                 value={f.value}
                 onChange={(e) => set({ [f.key]: Number(e.target.value) })}
-                className="mt-2 w-full border border-iris bg-paper px-3 py-2 data"
+                className="mt-2 w-full rounded-[var(--radius-md)] border border-iris/60 bg-paper px-3 py-2.5 data focus:border-guilloche focus:ring-1 focus:ring-guilloche/30 transition-colors"
               />
             </label>
           ))}
         </div>
 
         <label className="mt-6 block max-w-xs">
-          <span className="text-label text-iris-ink">Crossings per day</span>
+          <span className="text-label font-medium text-iris-ink">Crossings per day</span>
           <input
             type="number"
             min={100}
             step={100}
             value={dailyVolume}
             onChange={(e) => set({ dailyVolume: Number(e.target.value) })}
-            className="mt-2 w-full border border-iris bg-paper px-3 py-2 data"
+            className="mt-2 w-full rounded-[var(--radius-md)] border border-iris/60 bg-paper px-3 py-2.5 data focus:border-guilloche focus:ring-1 focus:ring-guilloche/30 transition-colors"
           />
         </label>
       </section>

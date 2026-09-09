@@ -36,19 +36,19 @@ function ConsoleShell() {
   const { pathname } = useLocation();
   return (
     <div className="flex min-h-screen flex-col bg-paper">
-      <header className="bg-intaglio text-paper">
-        <div className="flex items-baseline gap-6 px-8 pt-3">
-          <NavLink to="/" className="font-semibold tracking-tight hover:underline">
+      <header className="sticky top-0 z-50 bg-intaglio text-paper">
+        <div className="mx-auto flex max-w-7xl items-center gap-6 px-6 py-3">
+          <NavLink to="/" className="text-[length:var(--text-evidence)] font-semibold tracking-[-0.02em] hover:opacity-80 transition-opacity">
             Sashastra Seema Bal
           </NavLink>
-          <span className="text-bloom/80">Raxaul integrated check post</span>
-          <span className="ml-auto">
+          <span className="ml-auto flex items-center gap-4">
             <Clock />
+            <span className="hidden sm:inline-block h-4 w-px bg-white/20" />
+            <span className="text-label text-white/60">Officer 4471</span>
           </span>
-          <span className="text-bloom/80">Officer 4471</span>
         </div>
 
-        <nav className="flex gap-1 px-8 pt-3">
+        <nav className="mx-auto flex max-w-7xl gap-1 px-6 pb-0">
           {NAV.map((n) => {
             const active = pathname.startsWith(n.to);
             return (
@@ -56,10 +56,10 @@ function ConsoleShell() {
                 key={n.to}
                 to={n.to}
                 className={cn(
-                  "border-b-2 px-3 py-2 text-label transition-colors",
+                  "relative px-4 py-2.5 text-label font-medium rounded-t-[var(--radius-md)] transition-all",
                   active
-                    ? "border-guilloche text-paper"
-                    : "border-transparent text-bloom/70 hover:text-paper",
+                    ? "bg-paper text-intaglio"
+                    : "text-white/60 hover:text-white hover:bg-white/5",
                 )}
               >
                 {n.label}

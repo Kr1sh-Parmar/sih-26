@@ -15,7 +15,7 @@ import { OpenCircle } from "./marks/TrustMark";
 export function DisclosureNotice({ text }: { text: string | null }) {
   if (!text) return null;
   return (
-    <aside className="mt-6 border border-dashed border-iris bg-bloom/60 p-4">
+    <aside className="mt-6 rounded-[var(--radius-md)] border border-dashed border-iris bg-bloom/60 p-4">
       <div className="flex gap-3">
         <span className="mt-0.5 shrink-0 text-iris-ink">
           <OpenCircle />

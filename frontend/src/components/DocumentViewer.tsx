@@ -61,8 +61,8 @@ export function DocumentViewer({ docType, canvas, fields, signals, imageSrc }: P
   );
 
   return (
-    <div className="relative bg-intaglio p-5">
-      <div className="relative mx-auto max-h-[46vh]" style={{ aspectRatio: `${w} / ${h}`, maxWidth: `calc(46vh * ${w} / ${h})` }}>
+    <div className="relative rounded-[var(--radius-lg)] bg-intaglio p-5">
+      <div className="relative mx-auto max-h-[46vh] rounded-[var(--radius-md)] overflow-hidden" style={{ aspectRatio: `${w} / ${h}`, maxWidth: `calc(46vh * ${w} / ${h})` }}>
         {imageSrc ? (
           <img
             src={imageSrc}
@@ -88,14 +88,16 @@ export function DocumentViewer({ docType, canvas, fields, signals, imageSrc }: P
                 y={y1}
                 width={x2 - x1}
                 height={y2 - y1}
+                rx={6}
+                ry={6}
                 fill={active ? "var(--color-guilloche)" : "transparent"}
-                fillOpacity={active ? 0.22 : 0}
+                fillOpacity={active ? 0.18 : 0}
                 stroke={
                   failing
                     ? "var(--color-detain-lit)"
                     : active
                       ? "var(--color-guilloche)"
-                      : "var(--color-iris-ink)"
+                      : "rgba(255,255,255,0.4)"
                 }
                 strokeWidth={active ? 6 : failing ? 5 : 2.5}
                 strokeDasharray={failing || active ? undefined : "10 8"}
@@ -111,10 +113,10 @@ export function DocumentViewer({ docType, canvas, fields, signals, imageSrc }: P
         </svg>
       </div>
 
-      <p className={cn("mt-4 text-label", "text-bloom/70")}>
+      <p className={cn("mt-4 text-label", "text-white/50")}>
         {imageSrc
-          ? "The capture as screened. Every document here is generated \u2014 no real identity document appears anywhere in this repository."
-          : "Drawn specimen. This is a replayed case, not a capture \u2014 no real document appears anywhere in this repository."}
+          ? "The capture as screened. Every document here is generated — no real identity document appears anywhere in this repository."
+          : "Drawn specimen. This is a replayed case, not a capture — no real document appears anywhere in this repository."}
       </p>
     </div>
   );

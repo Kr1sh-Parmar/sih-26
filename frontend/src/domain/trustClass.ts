@@ -27,13 +27,13 @@ export const TRUST_STYLE: Record<TrustClass, TrustStyle> = {
   cryptographic: {
     label: "cryptographic",
     gloss: "A signature verifies against a trusted key. Certain.",
-    rule: "border-t-2 border-solid border-intaglio",
+    rule: "border-t-2 border-solid border-intaglio/30",
     rank: 0,
   },
   arithmetic: {
     label: "arithmetic",
     gloss: "A deterministic check. No model, no key.",
-    rule: "border-t border-solid border-intaglio",
+    rule: "border-t border-solid border-intaglio/20",
     rank: 1,
   },
   probabilistic: {
