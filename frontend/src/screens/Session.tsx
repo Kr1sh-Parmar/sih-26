@@ -49,7 +49,7 @@ function DocumentCard({
   return (
     <div
       className={cn(
-        "rounded-[var(--radius-lg)] border p-6 transition-all",
+        "rounded-[var(--radius-lg)] border p-6 transition-all hover:-translate-y-0.5 hover:shadow-md",
         active ? "border-guilloche/40 bg-guilloche/5" : "border-iris/40 bg-bloom/40",
       )}
       style={{ boxShadow: "var(--shadow-sm)" }}
@@ -211,18 +211,27 @@ export function Session() {
       </div>
 
       {anchor && (
-        <p className="mt-10 max-w-[42rem] text-[length:var(--text-evidence)] leading-relaxed text-iris-ink">
+        <p className="mt-8 max-w-[42rem] text-[length:var(--text-evidence)] leading-relaxed text-iris-ink">
           The {anchor.label} signature verifies against a key in the trust
           anchor store. Everything inside that signed payload is therefore
           proven, and it can be used to check the documents presented with it.
         </p>
       )}
 
-      <ol className="mt-6">
-        {edges.map((e, i) => (
-          <Edge key={e.field} edge={e} index={i} />
-        ))}
-      </ol>
+      {edges.length > 0 && (
+        <div
+          className="mt-6 rounded-[var(--radius-lg)] border border-iris/40 bg-white p-6"
+          style={{ boxShadow: "var(--shadow-sm)" }}
+        >
+          <h2 className="text-[length:var(--text-evidence)] font-semibold">How the documents relate</h2>
+          <div className="mt-1 h-px bg-iris/60" />
+          <ol className="mt-1">
+            {edges.map((e, i) => (
+              <Edge key={e.field} edge={e} index={i} />
+            ))}
+          </ol>
+        </div>
+      )}
 
       {disputed.length > 0 && (
         <div className="mt-8 rounded-[var(--radius-lg)] border border-detain/30 bg-detain/5 p-6">

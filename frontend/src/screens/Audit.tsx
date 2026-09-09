@@ -27,8 +27,10 @@ import { fixture, FIXTURES, type FixtureName } from "../transport/mockSocket";
 import { useMode } from "../transport/mode";
 import { useSettings } from "../store/settings";
 import { ModeBadge } from "../components/ModeBadge";
-import { TrustMark } from "../components/marks/TrustMark";
+import { TrustMark, OpenCircle } from "../components/marks/TrustMark";
+import { CrossIcon } from "../components/marks/Icon";
 import { docLabel } from "../domain/docType";
+import { TRUST_STYLE } from "../domain/trustClass";
 import { cn } from "../lib/utils";
 
 const BAND_WORD: Record<Band, string> = {
@@ -38,16 +40,9 @@ const BAND_WORD: Record<Band, string> = {
 };
 
 const BAND_PILL: Record<Band, string> = {
-  GREEN: "bg-emerald-100 text-emerald-700 border border-emerald-200",
-  AMBER: "bg-amber-100 text-amber-700 border border-amber-200",
-  RED: "bg-red-100 text-red-700 border border-red-200",
-};
-
-const TRUST_BADGE: Record<string, string> = {
-  cryptographic: "bg-blue-50 text-blue-700",
-  arithmetic: "bg-slate-100 text-slate-600",
-  probabilistic: "bg-violet-50 text-violet-600",
-  unverified: "bg-orange-50 text-orange-500",
+  GREEN: "bg-clear/10 text-clear border border-clear/30",
+  AMBER: "bg-secondary-ink/10 text-secondary-ink border border-secondary-ink/30",
+  RED: "bg-detain/10 text-detain border border-detain/30",
 };
 
 /**
@@ -191,13 +186,19 @@ export function Audit() {
       </div>
 
       {problem && (
-        <div className="mt-6 rounded-[var(--radius-md)] border border-red-200 bg-red-50 px-5 py-3.5">
+        <div className="mt-6 flex items-center gap-3 rounded-[var(--radius-md)] border border-red-200 bg-red-50 px-5 py-3.5">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-white">
+            <CrossIcon size={11} />
+          </span>
           <p className="text-red-800">{problem}</p>
         </div>
       )}
 
       {mode === "fixtures" && (
-        <div className="mt-6 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-5 py-3.5">
+        <div className="mt-6 flex items-center gap-3 rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-5 py-3.5">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-amber-600">
+            <OpenCircle size={16} />
+          </span>
           <p className="text-amber-800">
             These are rehearsed cases read from local fixtures. Re-scoring needs
             the screening service, because the verdict is only ever produced
@@ -327,7 +328,7 @@ export function Audit() {
                 key={`${s.id}-${i}`}
                 className="grid grid-cols-[2rem_1fr_5rem_2fr] items-baseline gap-3 rounded-[var(--radius-sm)] border border-iris/20 bg-bloom/30 px-4 py-3 hover:bg-bloom/60 transition-colors"
               >
-                <span className={cn("flex h-5 w-5 items-center justify-center rounded", TRUST_BADGE[s.trust_class])}>
+                <span className={cn("flex h-5 w-5 items-center justify-center rounded", TRUST_STYLE[s.trust_class].badge)}>
                   <TrustMark trust={s.trust_class} size={11} />
                 </span>
                 <span className="data text-label text-iris-ink font-mono">{s.id}</span>

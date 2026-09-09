@@ -10,7 +10,7 @@
  * while the traveller is still standing there, rather than returning an AMBER
  * "re-capture required" after they have moved on.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   gradeCapture,
@@ -23,6 +23,16 @@ import {
 import { useSession } from "../store/session";
 import { useCapture } from "../store/capture";
 import { DOC_TYPES, docLabel } from "../domain/docType";
+import {
+  CameraIcon,
+  CheckIcon,
+  CrossIcon,
+  RetakeIcon,
+  ScannerIcon,
+  ShutterIcon,
+  UploadIcon,
+} from "../components/marks/Icon";
+import type { MarkProps } from "../components/marks/TrustMark";
 import { cn } from "../lib/utils";
 
 /** Frames in the liveness burst, and the gap between them.
@@ -33,10 +43,10 @@ import { cn } from "../lib/utils";
 const BURST_FRAMES = 5;
 const BURST_GAP_MS = 280;
 
-const SOURCES: { key: CaptureSource; label: string; hint: string; icon: string }[] = [
-  { key: "scanner", label: "Scanner", hint: "Flatbed at the counter", icon: "🖨" },
-  { key: "upload", label: "File upload", hint: "Image or scanned PDF", icon: "📁" },
-  { key: "camera", label: "Camera", hint: "Also captures live face", icon: "📷" },
+const SOURCES: { key: CaptureSource; label: string; hint: string; Icon: ComponentType<MarkProps> }[] = [
+  { key: "scanner", label: "Scanner", hint: "Flatbed at the counter", Icon: ScannerIcon },
+  { key: "upload", label: "File upload", hint: "Image or scanned PDF", Icon: UploadIcon },
+  { key: "camera", label: "Camera", hint: "Also captures live face", Icon: CameraIcon },
 ];
 
 function GateRow({ gate }: { gate: QualityGate }) {
@@ -44,11 +54,11 @@ function GateRow({ gate }: { gate: QualityGate }) {
     <li className="flex items-start gap-3 py-3.5 border-t border-iris/30 first:border-t-0">
       <span
         className={cn(
-          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white text-[11px] font-bold",
+          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white",
           gate.ok ? "bg-emerald-500" : "bg-red-500",
         )}
       >
-        {gate.ok ? "✓" : "✕"}
+        {gate.ok ? <CheckIcon size={11} /> : <CrossIcon size={11} />}
       </span>
       <span className="min-w-0">
         <span className="block font-medium text-[length:var(--text-body)]">{gate.label}</span>
@@ -282,7 +292,7 @@ export function Capture() {
             </span>
             {documents.length > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-label text-emerald-700 font-medium">
-                ✓ {documents.length} screened
+                <CheckIcon size={11} /> {documents.length} screened
               </span>
             )}
             <button
@@ -308,10 +318,10 @@ export function Capture() {
                 onClick={() => setDocType(t)}
                 aria-pressed={docType === t}
                 className={cn(
-                  "rounded-full border px-3.5 py-1.5 text-label font-medium transition-all",
+                  "rounded-full border px-3.5 py-1.5 text-label font-medium transition-all hover:-translate-y-0.5",
                   docType === t
                     ? "border-guilloche bg-guilloche text-white"
-                    : "border-iris/50 bg-white text-iris-ink hover:border-iris-ink hover:text-intaglio",
+                    : "border-iris/50 bg-white text-iris-ink hover:border-iris-ink hover:text-intaglio hover:shadow-sm",
                 )}
               >
                 {docLabel(t)}
@@ -328,14 +338,14 @@ export function Capture() {
               type="button"
               onClick={() => { setSource(s.key); resetCapture(); }}
               className={cn(
-                "rounded-[var(--radius-md)] border p-4 text-left transition-all hover:shadow-sm",
+                "rounded-[var(--radius-md)] border p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-sm",
                 source === s.key
                   ? "border-guilloche bg-guilloche/8 ring-2 ring-guilloche/20"
                   : "border-iris/50 bg-white hover:border-iris-ink",
               )}
             >
-
-              <span className={cn("block font-semibold", source === s.key ? "text-guilloche" : "text-intaglio")}>
+              <s.Icon size={18} className={cn(source === s.key ? "text-guilloche" : "text-iris-ink")} />
+              <span className={cn("mt-2 block font-semibold", source === s.key ? "text-guilloche" : "text-intaglio")}>
                 {s.label}
               </span>
               <span className={cn("block text-label mt-0.5", source === s.key ? "text-guilloche/70" : "text-iris-ink")}>
@@ -348,6 +358,24 @@ export function Capture() {
         {/* Stage / viewer */}
         <div className="rounded-[var(--radius-xl)] bg-intaglio overflow-hidden">
           <div className="relative mx-auto aspect-[3/2] max-h-[54vh]">
+            {/* Corner guides + vignette — "document under glass," not a flat
+                dark rectangle. Purely decorative, so it's excluded from the
+                tab order and hidden from screen readers. */}
+            <div aria-hidden className="pointer-events-none absolute inset-0 z-10">
+              <div
+                className="absolute inset-0"
+                style={{ boxShadow: "inset 0 0 80px 10px rgba(0,0,0,0.35)" }}
+              />
+              {([
+                ["top-4 left-4", "border-t-2 border-l-2"],
+                ["top-4 right-4", "border-t-2 border-r-2"],
+                ["bottom-4 left-4", "border-b-2 border-l-2"],
+                ["bottom-4 right-4", "border-b-2 border-r-2"],
+              ] as const).map(([pos, borders]) => (
+                <span key={pos} className={cn("absolute h-6 w-6 border-white/30", pos, borders)} />
+              ))}
+            </div>
+
             {preview ? (
               <img src={preview} alt="Captured document" className="h-full w-full object-contain" />
             ) : source === "camera" ? (
@@ -432,9 +460,9 @@ export function Capture() {
                       type="button"
                       onClick={grabLive}
                       disabled={busy}
-                      className="rounded-[var(--radius-md)] bg-intaglio px-5 py-2.5 font-semibold text-white hover:bg-intaglio/90 transition-colors disabled:opacity-60"
+                      className="flex items-center gap-2 rounded-[var(--radius-md)] bg-intaglio px-5 py-2.5 font-semibold text-white hover:bg-intaglio/90 transition-colors disabled:opacity-60"
                     >
-                      {busy ? "Hold still…" : "📸 Photograph the traveller"}
+                      {busy ? "Hold still…" : (<><ShutterIcon size={16} /> Photograph the traveller</>)}
                     </button>
                     <button
                       type="button"
@@ -472,7 +500,7 @@ export function Capture() {
                 disabled={busy}
                 className="flex items-center gap-2 rounded-[var(--radius-md)] bg-white px-5 py-2.5 font-semibold text-intaglio hover:bg-bloom transition-colors disabled:opacity-60"
               >
-                {busy ? "Hold still…" : "📸 Take the sharpest frame"}
+                {busy ? "Hold still…" : (<><ShutterIcon size={16} /> Take the sharpest frame</>)}
               </button>
             ) : (
               <button
@@ -480,16 +508,16 @@ export function Capture() {
                 onClick={() => fileRef.current?.click()}
                 className="flex items-center gap-2 rounded-[var(--radius-md)] bg-white px-5 py-2.5 font-semibold text-intaglio hover:bg-bloom transition-colors"
               >
-                📁 Choose a file
+                <UploadIcon size={16} /> Choose a file
               </button>
             )}
             {preview && (
               <button
                 type="button"
                 onClick={resetCapture}
-                className="rounded-[var(--radius-md)] border border-white/20 px-4 py-2.5 text-white/70 hover:bg-white/10 transition-colors"
+                className="flex items-center gap-2 rounded-[var(--radius-md)] border border-white/20 px-4 py-2.5 text-white/70 hover:bg-white/10 transition-colors"
               >
-                ↺ Capture again
+                <RetakeIcon size={14} /> Capture again
               </button>
             )}
           </div>

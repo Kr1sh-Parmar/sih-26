@@ -81,6 +81,8 @@ function Section({
 export function Landing() {
   const total = PIPELINE.reduce((a, s) => a + s.ms, 0);
   const widest = Math.max(...PIPELINE.map((s) => s.ms));
+  const axisMax = Math.ceil(widest / 50) * 50;
+  const ticks = Array.from({ length: axisMax / 50 + 1 }, (_, i) => i * 50);
 
   return (
     <div className="min-h-screen bg-paper">
@@ -161,18 +163,49 @@ export function Landing() {
             about fifteen per cent of documents.
           </p>
 
-          <ul className="mt-8 space-y-1">
+          <ul className="mt-8 space-y-1.5">
             {PIPELINE.map((s) => (
-              <li key={s.stage} className="flex items-center gap-4 py-2">
-                <span className="w-72 shrink-0 text-[length:var(--text-body)]">{s.stage}</span>
-                <span
-                  className="h-3 rounded-full bg-guilloche/70"
-                  style={{ width: `${(s.ms / widest) * 100}%`, maxWidth: "22rem" }}
-                />
-                <span className="data text-label text-iris-ink">{s.ms} ms</span>
+              <li key={s.stage} className="grid grid-cols-[16rem_1fr_4rem] items-center gap-4">
+                <span className="text-[length:var(--text-body)]">{s.stage}</span>
+                <div className="relative h-4 max-w-[24rem]">
+                  {/* Gridlines — each row draws its own segment at the same
+                      tick positions, so they read as continuous columns
+                      without needing one chart-wide SVG. */}
+                  {ticks.map((t) => (
+                    <span
+                      key={t}
+                      aria-hidden
+                      className="absolute inset-y-0 w-px bg-iris/25"
+                      style={{ left: `${(t / axisMax) * 100}%` }}
+                    />
+                  ))}
+                  <span
+                    className="absolute inset-y-0.5 left-0 rounded-full bg-guilloche/70"
+                    style={{ width: `${(s.ms / axisMax) * 100}%` }}
+                  />
+                </div>
+                <span className="data text-label text-iris-ink text-right">{s.ms} ms</span>
               </li>
             ))}
           </ul>
+
+          {/* Axis */}
+          <div className="mt-1 grid grid-cols-[16rem_1fr_4rem] gap-4">
+            <span />
+            <div className="relative h-4 max-w-[24rem]">
+              {ticks.map((t) => (
+                <span
+                  key={t}
+                  className="data absolute -translate-x-1/2 text-[11px] text-iris-ink"
+                  style={{ left: `${(t / axisMax) * 100}%` }}
+                >
+                  {t}
+                </span>
+              ))}
+              <span className="data absolute right-0 translate-x-full pl-1 text-[11px] text-iris-ink">ms</span>
+            </div>
+            <span />
+          </div>
 
           <div className="mt-6 border-t border-iris/60 pt-4">
             <span className="data text-[length:var(--text-evidence)] font-semibold">

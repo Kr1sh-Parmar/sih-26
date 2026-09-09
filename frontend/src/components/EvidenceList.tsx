@@ -7,18 +7,11 @@ import type { Finding, Signal } from "../contracts";
 import { orderEvidence, type EvidenceRow } from "../domain/ordering";
 import { TRUST_STYLE } from "../domain/trustClass";
 import { TrustMark } from "./marks/TrustMark";
+import { ChevronIcon } from "./marks/Icon";
 import { useScreening } from "../store/screening";
 import { cn } from "../lib/utils";
 
 const PAIR = /^(.*?)\s([0-9]{4}-[0-9]{2}-[0-9]{2}|[A-Z0-9<]{6,})\s(.*?)\s([0-9]{4}-[0-9]{2}-[0-9]{2}|[A-Z0-9<]{6,})(.*)$/;
-
-/** Colored pill badge for trust class */
-const TRUST_BADGE: Record<string, string> = {
-  cryptographic: "bg-blue-50 text-blue-700 border border-blue-200",
-  arithmetic: "bg-slate-100 text-slate-600 border border-slate-200",
-  probabilistic: "bg-violet-50 text-violet-600 border border-violet-200",
-  unverified: "bg-orange-50 text-orange-600 border border-orange-200",
-};
 
 function EvidenceText({ text }: { text: string }) {
   const m = PAIR.exec(text);
@@ -68,13 +61,7 @@ function Row({ row, index }: { row: EvidenceRow; index: number }) {
         <span
           className={cn(
             "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)]",
-            mark === "cryptographic"
-              ? "bg-blue-50 text-blue-700"
-              : mark === "arithmetic"
-                ? "bg-slate-100 text-slate-600"
-                : mark === "probabilistic"
-                  ? "bg-violet-50 text-violet-600"
-                  : "bg-orange-50 text-orange-500",
+            TRUST_STYLE[mark].badge,
           )}
           title={style.gloss}
         >
@@ -87,7 +74,7 @@ function Row({ row, index }: { row: EvidenceRow; index: number }) {
           </p>
 
           <div className="mt-1.5 flex items-center gap-2">
-            <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", TRUST_BADGE[trust])}>
+            <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", TRUST_STYLE[trust].badge)}>
               {style.label}
             </span>
           </div>
@@ -100,7 +87,13 @@ function Row({ row, index }: { row: EvidenceRow; index: number }) {
                 aria-expanded={open}
                 className="mt-2 inline-flex items-center gap-1 text-label text-guilloche font-medium hover:underline underline-offset-4"
               >
-                <span className={cn("inline-block h-3 w-3 rounded-full border border-guilloche/50 text-center leading-none text-[9px] font-bold", open && "rotate-90 transition-transform")}>▶</span>
+                <motion.span
+                  className="inline-flex h-3 w-3 items-center justify-center rounded-full border border-guilloche/50"
+                  animate={{ rotate: open ? 90 : 0 }}
+                  transition={{ duration: reduce ? 0 : 0.15 }}
+                >
+                  <ChevronIcon size={7} />
+                </motion.span>
                 {open ? "Hide" : "Show"} {supporting.length} supporting{" "}
                 {supporting.length === 1 ? "check" : "checks"}
               </button>

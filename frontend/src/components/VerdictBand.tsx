@@ -10,32 +10,35 @@ const BAND = {
   GREEN: {
     word: "CLEAR",
     action: "No further inspection required",
-    ink: "text-emerald-700",
+    ink: "text-clear",
     bg: "bg-emerald-50",
     border: "border-emerald-200",
-    bar: "bg-emerald-500",
-    dot: "bg-emerald-500",
+    bar: "bg-clear",
+    dot: "bg-clear",
     badge: "bg-emerald-100 text-emerald-800",
+    glow: "var(--color-clear)",
   },
   AMBER: {
     word: "SECONDARY",
     action: "Send for secondary inspection",
-    ink: "text-amber-700",
+    ink: "text-secondary-ink",
     bg: "bg-amber-50",
     border: "border-amber-200",
-    bar: "bg-amber-500",
-    dot: "bg-amber-500",
+    bar: "bg-secondary-ink",
+    dot: "bg-secondary-ink",
     badge: "bg-amber-100 text-amber-800",
+    glow: "var(--color-secondary-ink)",
   },
   RED: {
     word: "DETAIN",
     action: "Detain for manual review",
-    ink: "text-red-600",
+    ink: "text-detain",
     bg: "bg-red-50",
     border: "border-red-200",
-    bar: "bg-red-500",
-    dot: "bg-red-500",
+    bar: "bg-detain",
+    dot: "bg-detain",
     badge: "bg-red-100 text-red-800",
+    glow: "var(--color-detain)",
   },
 } as const;
 
@@ -83,13 +86,25 @@ export function VerdictBand({ band, score, coverage, coverageFloor = 0.7 }: Prop
 
   return (
     <motion.div
-      initial={reduce ? false : { opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.25 }}
-      className={cn("rounded-[var(--radius-lg)] border p-6", b.bg, b.border)}
+      initial={reduce ? false : { opacity: 0, y: 8, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.4, ease: [0.2, 0, 0, 1] }}
+      className={cn("relative overflow-hidden rounded-[var(--radius-lg)] border p-6", b.bg, b.border)}
+      style={{ boxShadow: `var(--shadow-lg), 0 12px 32px -16px ${b.glow}40` }}
     >
+      {/* A quiet glow behind the word — weight, not celebration. The verdict
+          is still carried by the word itself; this is depth, not decoration. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-10 -top-10 h-56 w-56 rounded-full"
+        style={{
+          background: `radial-gradient(circle, ${b.glow}26 0%, transparent 70%)`,
+          filter: "blur(20px)",
+        }}
+      />
+
       {/* Status dot + action label */}
-      <div className="flex items-center gap-2 mb-3">
+      <div className="relative flex items-center gap-2 mb-3">
         <span className={cn("h-2.5 w-2.5 rounded-full", b.dot)} />
         <span className={cn("text-label font-medium", b.ink)}>
           {short ? "Insufficient evidence" : b.action}
@@ -98,7 +113,7 @@ export function VerdictBand({ band, score, coverage, coverageFloor = 0.7 }: Prop
 
       {/* The big verdict word */}
       <div
-        className={cn("text-[length:var(--text-verdict)] leading-[0.88] font-bold tracking-[-0.03em]", b.ink)}
+        className={cn("relative text-[length:var(--text-verdict)] leading-[0.88] font-bold tracking-[-0.03em]", b.ink)}
         style={{ fontStretch: "125%" }}
       >
         {b.word}

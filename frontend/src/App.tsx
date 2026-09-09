@@ -6,6 +6,7 @@
  * officer who cannot see the legend cannot read the evidence.
  */
 import { HashRouter, NavLink, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { motion, useReducedMotion } from "motion/react";
 import { Landing } from "./screens/Landing";
 import { Capture } from "./screens/Capture";
 import { Screening } from "./screens/Screening";
@@ -34,6 +35,7 @@ function Clock() {
 
 function ConsoleShell() {
   const { pathname } = useLocation();
+  const reduce = useReducedMotion();
   return (
     <div className="flex min-h-screen flex-col bg-paper">
       <header className="sticky top-0 z-50 bg-intaglio text-paper">
@@ -56,12 +58,17 @@ function ConsoleShell() {
                 key={n.to}
                 to={n.to}
                 className={cn(
-                  "relative px-4 py-2.5 text-label font-medium rounded-t-[var(--radius-md)] transition-all",
-                  active
-                    ? "bg-paper text-intaglio"
-                    : "text-white/60 hover:text-white hover:bg-white/5",
+                  "relative px-4 py-2.5 text-label font-medium rounded-t-[var(--radius-md)] transition-colors",
+                  active ? "text-intaglio" : "text-white/60 hover:text-white hover:bg-white/5",
                 )}
               >
+                {active && (
+                  <motion.span
+                    layoutId="nav-active"
+                    className="absolute inset-0 -z-10 rounded-t-[var(--radius-md)] bg-paper"
+                    transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 500, damping: 35 }}
+                  />
+                )}
                 {n.label}
               </NavLink>
             );

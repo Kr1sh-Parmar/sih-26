@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ScreeningEvent } from "../contracts";
+import type { ModuleName, ScreeningEvent } from "../contracts";
 import { useScreening } from "../store/screening";
 import { fixture, replayFixture, type FixtureName } from "../transport/mockSocket";
 import { connect, fetchDoc, imageUrl, startReplay, startScreening } from "../transport/socket";
@@ -38,8 +38,13 @@ const SCENES: { key: FixtureName; label: string }[] = [
 
 export function Screening() {
   const [scene, setScene] = useState<FixtureName>("green");
-  const [elapsed, setElapsed] = useState<number | null>(null);
   const startedAt = useRef<number>(0);
+  /** Real, client-timestamped arrival time (ms since `startedAt`) of each
+   *  module's first signal, and of the final `done` phase — the only
+   *  timing data the stepper can honestly show. See StreamStatus.tsx for
+   *  why this lives here rather than inside the component: `onEvent` below
+   *  already sees every event exactly once, in real arrival order. */
+  const stageTimes = useRef<Partial<Record<ModuleName | "done", number>>>({});
   const mode = useMode();
 
   const s = useScreening();
@@ -101,15 +106,18 @@ export function Screening() {
 
     s.reset();
     startedAt.current = performance.now();
-    setElapsed(null);
+    stageTimes.current = {};
     signedRef.current = false;
     screeningId.current = null;
     setCaptureImage(null);
 
     const onEvent = (e: ScreeningEvent) => {
       s.apply(e);
-      if (e.type === "phase" && e.phase === "done") {
-        setElapsed(Math.round(performance.now() - startedAt.current));
+      if (e.type === "signal" && stageTimes.current[e.signal.module] === undefined) {
+        stageTimes.current[e.signal.module] = performance.now() - startedAt.current;
+      }
+      if (e.type === "phase" && e.phase === "done" && stageTimes.current.done === undefined) {
+        stageTimes.current.done = performance.now() - startedAt.current;
       }
       // A screened capture joins the session, so the next document is visibly
       // checked against it and the session view has something to draw. The
@@ -208,7 +216,12 @@ export function Screening() {
       {/* ---------------------------------------------- physical evidence */}
       <div className="min-w-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <StreamStatus phase={s.phase} signals={s.signals} elapsedMs={elapsed} />
+          <StreamStatus
+            phase={s.phase}
+            signals={s.signals}
+            stageTimes={stageTimes.current}
+            runStartedAt={startedAt.current}
+          />
           <ModeBadge mode={mode} />
         </div>
 
@@ -238,13 +251,17 @@ export function Screening() {
       </div>
 
       {/* ------------------------------------------------ written record */}
-      <div className="min-w-0 rounded-[var(--radius-lg)] border border-iris/40 bg-bloom/50 p-6" style={{ boxShadow: "var(--shadow-md)" }}>
+      <div className="min-w-0 space-y-5">
         <VerdictBand band={s.band} score={s.score} coverage={s.coverage} />
 
-        <h2 className="mt-8 text-[length:var(--text-evidence)] font-semibold">Evidence</h2>
-        <div className="mt-1 h-px bg-iris/60" />
-
-        <EvidenceList findings={s.findings} signals={s.signals} />
+        <div
+          className="rounded-[var(--radius-lg)] border border-iris/40 bg-white p-6"
+          style={{ boxShadow: "var(--shadow-sm)" }}
+        >
+          <h2 className="text-[length:var(--text-evidence)] font-semibold">Evidence</h2>
+          <div className="mt-1 h-px bg-iris/60" />
+          <EvidenceList findings={s.findings} signals={s.signals} />
+        </div>
 
         <DisclosureNotice text={s.disclosure} />
 
@@ -254,7 +271,7 @@ export function Screening() {
             second screening for one traveller. It stays for the rehearsed
             running order, and for the day the camera fails in front of the
             panel. */}
-        <div className="mt-10 border-t border-iris/40 pt-4">
+        <div className="rounded-[var(--radius-lg)] border border-iris/30 bg-bloom/30 p-5">
           {capture ? (
             <p className="text-label text-iris-ink">
               Screening the {capture.source === "camera" ? "camera" : capture.source}{" "}

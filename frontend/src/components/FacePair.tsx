@@ -9,6 +9,7 @@
  * The officer needs to know how close the call was. That is the margin.
  */
 import type { ReactNode } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import type { Region } from "../contracts";
 import { faceMargin, FACE_BAND_LABEL, gaugePosition } from "../domain/faceMargin";
 import { cn } from "../lib/utils";
@@ -33,6 +34,7 @@ interface Props {
 }
 
 function FaceWell({ label, empty, children }: { label: string; empty?: boolean; children?: ReactNode }) {
+  const reduce = useReducedMotion();
   return (
     <div className="flex-1">
       <div className="relative aspect-[3/4] rounded-[var(--radius-md)] bg-intaglio/90 overflow-hidden">
@@ -41,7 +43,14 @@ function FaceWell({ label, empty, children }: { label: string; empty?: boolean; 
             Waiting for the camera
           </div>
         ) : children ? (
-          children
+          <motion.div
+            initial={reduce ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="h-full w-full"
+          >
+            {children}
+          </motion.div>
         ) : (
           <svg viewBox="0 0 60 80" className="h-full w-full" aria-hidden>
             <circle cx="30" cy="28" r="14" fill="var(--color-iris)" opacity="0.7" />
@@ -63,6 +72,7 @@ export function FacePair({
   docCanvas,
   liveImageSrc,
 }: Props) {
+  const reduce = useReducedMotion();
   const r = faceMargin(cosine, threshold);
   const noFace = r.band === "no_face";
 
@@ -126,12 +136,14 @@ export function FacePair({
               className="absolute top-1 h-6 w-px bg-intaglio"
               style={{ left: `${gaugePosition(threshold) * 100}%` }}
             />
-            <div
+            <motion.div
               className={cn(
                 "absolute top-2 h-4 w-4 -translate-x-1/2 rounded-full border-2 border-paper",
                 r.band === "match" ? "bg-clear" : r.band === "no_match" ? "bg-detain" : "bg-secondary-ink",
               )}
-              style={{ left: `${gaugePosition(r.cosine!) * 100}%` }}
+              initial={reduce ? false : { left: "50%", opacity: 0 }}
+              animate={{ left: `${gaugePosition(r.cosine!) * 100}%`, opacity: 1 }}
+              transition={reduce ? { duration: 0 } : { type: "spring", stiffness: 300, damping: 24 }}
             />
           </div>
           <div className="flex justify-between text-label text-iris-ink">

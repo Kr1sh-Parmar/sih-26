@@ -18,6 +18,12 @@
   --color-detain: #DC2626;
   --color-detain-lit: #F87171;
 
+  /* Trust-class accent for `probabilistic` — used throughout (EvidenceList,
+     Audit, Landing) but previously hardcoded as raw Tailwind `violet-*`
+     with no token backing it. Governed here like the other three. */
+  --color-probabilistic: #7C3AED;
+  --color-probabilistic-lit: #A78BFA;
+
   /* Typography */
   --font-sans: 'Archivo', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'DM Mono', ui-monospace, 'Cascadia Mono', monospace;
@@ -76,7 +82,13 @@
   button, a, input, select, textarea {
     transition: color 0.15s ease, background-color 0.15s ease,
                 border-color 0.15s ease, box-shadow 0.15s ease,
-                opacity 0.15s ease;
+                opacity 0.15s ease, transform 0.1s ease;
+  }
+
+  /* One rule, every button in the app — the tactile press-down every native
+     control has and every flat web button is missing. */
+  button:not(:disabled):active {
+    transform: scale(0.97);
   }
 }
 

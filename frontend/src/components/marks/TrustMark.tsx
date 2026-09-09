@@ -8,7 +8,7 @@
  */
 import type { TrustClass } from "../../contracts";
 
-interface MarkProps {
+export interface MarkProps {
   size?: number;
   className?: string;
 }
