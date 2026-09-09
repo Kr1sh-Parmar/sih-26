@@ -1,11 +1,74 @@
 # Progress — what is done, what is remaining
 
 Session tracker. Updated as work lands so a new session can pick up cold without
-re-deriving the state of the repo. Last updated **2026-09-08**.
+re-deriving the state of the repo. Last updated **2026-09-09**.
 
-**Excluded from this file by decision:** training the 22-class field detector.
-That handoff lives in `MODEL-TRAINING.md` and is running on an external GPU.
-Everything *downstream* of the weights landing is tracked here.
+**The detector has landed.** `field_detector_22cls` came back from the external
+GPU on 2026-09-09 and is deployed. `MODEL-TRAINING.md` is now a record rather
+than a handoff, and everything this file listed as "blocked on the detector
+weights landing" is done.
+
+---
+
+## Where the repo stands, 2026-09-09
+
+```
+python -m pytest          381 passed, 5 skipped     (baseline 379 / 7)
+frontend npm run verify   4/4 gates, 34 tests
+models/                   field_detector_22cls, face_detector, face_embedding,
+                          face_liveness, florence2 (x4), rec_devanagari
+/health                   missing = []   - empty for the first time
+```
+
+The five remaining skips are all inverse-condition tests: they run only when
+weights are *absent*, to prove the degradation path. Their skipping is the
+detector being present.
+
+### Done this session
+
+| | |
+|---|---|
+| **Detector deployed** | sha256 verified against the sidecar, class order matches `data.yaml`, the head-shape acceptance gate passes. The 4 previously-skipped tests are live. |
+| **Detector re-measured through the shipping path** | New `data/tools/eval_detector.py`. **0.926** recall on its own test split - reproduces the run's 0.906 and proves the int8 export and decoder are correct - and **0.142** on the generated cards the demo uses. D51. |
+| **A regression the detector introduced, found and fixed** | The fixed-position MRZ read was the `else` of `if ctx.field_boxes`. A detector that located the name and missed the zone therefore suppressed the read that needs no detector: passport lost all five ICAO check digits and fell to Florence-2 at **9,654 ms, coverage 0.522**. Now **3,684 ms, coverage 0.619**. Visa gained its MRZ too. |
+| **Latency, re-measured** | aadhaar 6,596 -> **481 ms** p50, pan 6,006 -> **443 ms**, voter_id **483 ms** - three of six now inside the 1,020 ms budget. passport 2,251 / 7,130, dl 551 / 5,708, visa 1,238 / 1,306 remain over, for two named reasons. |
+| **Memory, re-measured** | 170 MB warm and idle, ~190 MB working, **1,428 MB only once the fallback loads** - which the common documents no longer do. Bimodal and one-way. |
+| **VLM fallback re-gated** | Fired on any single unread field; now on a *share* of attempted reads. DL: 42% -> 17% of runs, mean 2,777 -> 1,522 ms. D53. |
+| **Active liveness built** - cut-list item 2 un-cut | OpenCV's bundled Haar eye cascade: no new model, no new dependency, `tests/test_offline.py` untouched and passing. Size floor `MIN_FACE_PX = 320` measured against phantom blinks on static images. `POST /screen` takes a `live_frames` burst. D52. |
+| **D48 held** | Five mutation families on a passport, none clears. A forged document did not become clearable when documents became readable - the thing most at risk this session. |
+| **Console wired to the backend** | `Capture` now carries a document-type selector, two-step camera capture and the captured bytes through to `Screening`, which posts them to `/screen`. `POST /screen` was reachable and uncalled until now. Fixture scenes retained as the backup path. D54. |
+| **A false-match bug caught before it shipped** | The first draft of the camera path reused the document frame as the live frame. `_locate` takes `largest(detect(image))` for both the document portrait *and* the live face, so one frame handed in twice compares a face to itself: **cosine 1.0, every impostor holding someone else's card cleared**. The camera source now photographs the card and the traveller separately, and a test measures the 1.0 so the reasoning cannot be lost. D54. |
+| **Two bugs inside the Docker image** | The image had been built here 40 hours earlier and **never run**. The first execution of `docker compose --profile verify run --rm verify` found that `import cv2` fails inside it (`rapidocr-onnxruntime` drags in plain `opencv-python`, which shadows the pinned headless build and wants `libGL.so.1`) and that `tests/test_generator.py` cannot be collected without the build-time dependencies. Both fixed; the build now asserts `import cv2`. D55. |
+| **Docker: the offline gate passes** | `docker compose --profile verify run --rm verify` — the whole suite inside the shipping image with `network_mode: none` — **exits 0**. It had never been run. The earlier claim that Docker "was never built here" was also wrong: `docker images` showed `sih-screening-api:latest` from 40 hours before. |
+| **Four bugs in the image, one in the suite's guards** | `import cv2` failed inside the container; `/screen/replay/` could not find its fixtures; the console's build context ignored nothing; `tests/test_generator.py` could not be collected. Plus the guard bug that hid them: the generator imports Faker inside its functions, so every `try: import data.generator` probe reported it available in the image where it is not. D55. |
+| **A fifth, found by screening a document in the running container** | Every real document came back as an error frame: `Object of type float32 is not JSON serializable`. `requirements.txt` pinned everything exactly *except* numpy, a range — host 1.26.4, image 2.4.6 — and NumPy 2 keeps float32 through a division where 1.x widened it. **The suite and the shipping artefact were running different code.** numpy pinned, coordinates cast at source, and a test that screens a real PAN over the real socket. D56. |
+| **Container gate closed** | `docker compose up` + `GET /health`: `missing: []`, every model loaded. Console image builds. The suite passes inside the image with the network taken away. |
+| **The demo runs, in a browser, against the containers** | Upload an Aadhaar then a PAN on the capture screen: PAN reaches **CLEAR at 83% coverage with three cryptographic propagation findings**, and the session view draws all three edges. Three defects were between "endpoint reachable" and "demo works" — sessions were reset on every capture (killing propagation), the console's quality gate was stricter than the pipeline's, and the viewer drew a passport while screening an Aadhaar. D57. |
+| **Face calibration captured** | 6 volunteers × 40 frames at 720p, consent recorded, verified as six distinct identities (same person 0.83–0.94, different people −0.09–0.13). Cards rendered at 3× because the portrait landed *below* `doc_min_px` at native size. |
+
+### Known-open after this session
+
+- **The domain gap is the headline limitation.** 0.142 recall on generated cards
+  means 2-4 fields located per demo document, coverage 0.47-0.73, and only the
+  PAN reaching GREEN. Retraining was considered and declined with reasons (D51).
+- **Three of six document types miss the latency budget.** passport and visa on
+  the untargeted MRZ band read (~740-950 ms of p50); dl on the Florence-2 tail.
+  Tightening the MRZ crop is the identified next optimisation and was not
+  attempted, because the crop is what the read accuracy rests on.
+- **Scenes 1 and 2 still do not run as scripted** - now for a specific reason
+  (detector recall on generated renders) rather than "nothing is read at all".
+  Scene 3, the headline, runs as scripted for the first time. See the
+  2026-09-09 rehearsal record in `context/DEMO.md`.
+- ~~Active liveness is not wired to the console.~~ **Done** — the console posts
+  captures, including the liveness burst, to `/screen`. D54.
+- **Devanagari is still unproven on a scanned card.** Unchanged.
+- **Face calibration is one physical step from done.** `var/calibration/` holds
+  6 people × 40 frames and 6 rendered cards (`sheet_00.png`, `sheet_01.png`).
+  Print them, scan at 600 dpi, save each crop as `person_NN/doc.jpg`, then run
+  `calibrate_face.py --far 0.01`. **Do not pass `--apply`** — it flips
+  `calibrated: true`, which deletes the officer-facing "not yet calibrated"
+  caveat, and 6 people is 15 identity pairs: a pilot, not an operating point.
+  Set the threshold by hand and leave `calibrated: false`.
 
 ---
 
@@ -109,7 +172,8 @@ python -m pytest     379 passed, 7 skipped
 
 - **Latency misses budget on every document type.** Expected to improve when the detector replaces the VLM fallback on MRZ-less documents, but it is not measured and must not be claimed.
 - **Florence-2 memory.** 1.5 GB resident is a real constraint on checkpoint hardware.
-- Docker was never built here — not on PATH, engine down. Phase 5's clean-build gate is still open and has to run on the demo box.
+- ~~Docker was never built here — not on PATH, engine down.~~ **That was wrong**, and it is worth recording why: `docker images` shows `sih-screening-api:latest` built here 40 hours earlier. Nobody checked; the claim came from `docker` not being on PATH, which is a different fact.
+- **The container gate is closed.** The suite passes inside the image offline, `up` + `/health` reports `missing: []`, a real document screens end to end, and the console image builds. What is left of ROADMAP Phase 5 is physical: the cable-out run, three timed rehearsals, the backup laptop and the USB video. See the 2026-09-09 container section in `context/DEMO.md`.
 - **Devanagari is unproven on a scanned card.** It reads clean renders; on the generated cards, where Hindi is only small static text and labels, reads come back as noise. Do not claim Hindi field reading until the print-and-rescan pass tests it.
 
 ---
@@ -120,17 +184,19 @@ python -m pytest     379 passed, 7 skipped
 
 | # | Work | Files | Size | Note |
 |---|---|---|---|---|
-| 1 | **Active liveness (blink EAR)** | `api/`, `modules/face/liveness.py`, `frontend/src/screens/Capture.tsx` | 1–2 days | **Defaulted to SKIP.** Cut-list item 2 in ROADMAP.md. Needs a new FaceMesh model + dependency that risks `tests/test_offline.py`. Passive liveness is deployed and measured. Revisit only if a panel asks. |
+| 1 | ~~Active liveness (blink EAR)~~ | `api/main.py`, `modules/face/liveness.py`, `modules/face/__init__.py` | **done** | Built 2026-09-09 with OpenCV's bundled Haar eye cascade — no new model, no new dependency, so `tests/test_offline.py` is untouched and passing. `MIN_FACE_PX = 320` is measured, not chosen. Not wired to the console; see Known-open. D52. |
 | 2 | ~~Devanagari OCR deployment~~ | — | **done** | Deployed 2026-09-08. `models/rec_devanagari.onnx`, reads clean renders at 0.94–1.00. Drops inter-word spaces; unproven on scanned cards. |
 
-### Blocked on the detector weights landing
+### ~~Blocked on the detector weights landing~~ — **all done 2026-09-09**
 
-No code to write. These are currently unrunnable:
-
-- 4 skipped tests in `tests/test_extraction.py` (lines 338, 356, 369, 387) go live.
-- **Verify the sidecar class order matches the weights.** A disagreeing sidecar silently mislabels every field — `modules/extraction/detect.py:72` takes classes and `imgsz` from the sidecar, never from a constant.
-- Re-run the rehearsal and rewrite the `# Rehearsal record` section of `context/DEMO.md`. Scenes 1, 2 and the payoff of 3 are marked "No" today.
-- Re-run `scripts/measure_latency.py` — the number agent B produces this session is a **floor** with the reading path short-circuited, not the shipping number.
+- ~~4 skipped tests in `tests/test_extraction.py` go live~~ — they run and pass.
+- ~~Verify the sidecar class order matches the weights~~ — pinned by
+  `test_the_class_list_is_the_frozen_22_class_ontology_in_dataset_order`, and
+  the sha256 was checked against the sidecar on copy.
+- ~~Re-run the rehearsal~~ — new record dated 2026-09-09 in `context/DEMO.md`.
+- ~~Re-run `scripts/measure_latency.py`~~ — done for all six document types, plus
+  memory. The 2026-09-08 figures are marked in `data/EXTRACTION.md` as the
+  detector-less floor they were.
 
 ### Needs a person, not a keyboard
 

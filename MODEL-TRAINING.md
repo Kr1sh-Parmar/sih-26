@@ -11,20 +11,34 @@ track). See the table at the end.
 
 ---
 
-## Status, 2026-09-07
+## Status, 2026-09-09 — **done and deployed**
 
 | | |
 |---|---|
-| State | **stopped at epoch 2 of 100.** No process running. |
-| Cause | run died / was killed on 2026-09-06 ~22:05. Last output is in `var/training.log`. |
-| Best so far | `runs/fields/weights/best.pt`, epoch 1 — mAP50 0.448, mAP50-95 0.263 |
-| Last | `runs/fields/weights/last.pt`, epoch 2 — mAP50 0.470, mAP50-95 0.257 |
-| Speed on this box | ~1400 s/epoch (RTX 3050 6 GB laptop) → 100 epochs ≈ 38 h |
-| `models/` | exists, but holds only the **face** models. No field detector has been exported. |
+| State | trained on the external GPU, exported, and deployed to `models/` |
+| Shipped | `field_detector_22cls.int8.onnx`, 9.88 MB, imgsz 640 |
+| sha256 | `d8baab1d46aedaac0ab3c572780b8e54780a6d8595c65e787549f7fb3c1b3c55` — verified against the sidecar after copying |
+| Run reported | precision 0.643, recall 0.906, mAP50 0.766, mAP50-95 0.541 |
+| Shipped artefact, re-measured | recall **0.926** on the test split through the real screening path (`data/tools/eval_detector.py`) |
+| On generated cards | recall **0.142** — a domain gap, see **D51**. Quote both numbers or neither |
+| Acceptance gate | `tests/test_extraction.py::test_the_exported_head_matches_what_the_decoder_assumes` — **passes** |
+| `/health` | `loaded` contains `field_detector_22cls`; `missing` is empty for the first time |
 
-The 38-hour figure is why this is moving to an external GPU. Epoch 2 of a
-100-epoch cosine schedule is worth roughly nothing — plan on a fresh run, not a
-resume.
+The verification steps below were all run on 2026-09-09 and all passed. The
+history is kept because the next model to be trained here follows the same path.
+
+### The earlier local run, for the record
+
+| | |
+|---|---|
+| State | stopped at epoch 2 of 100 on 2026-09-06 ~22:05; last output in `var/training.log` |
+| Best | `runs/fields/weights/best.pt`, epoch 1 — mAP50 0.448, mAP50-95 0.263 |
+| Speed on this box | ~1400 s/epoch (RTX 3050 6 GB laptop) → 100 epochs ≈ 38 h |
+
+The 38-hour figure is why it moved to an external GPU. Note that
+`runs/fields/weights/*.pt` on this machine are still those **epoch-1/2 local
+checkpoints** — they are not the weights that shipped, and they must not be
+mistaken for a fine-tuning base.
 
 ---
 
@@ -203,12 +217,33 @@ must report a real `field_detector` version string instead of `null`.
 
 ---
 
-## What lands when it works
+## What landed when it worked
 
 OCR is gated on the detector: `modules/extraction/__init__.py:run()` only calls
-`ocr.run(ctx)` when `ctx.field_boxes` is non-empty. So today every declared text
-field emits `inconclusive`, coverage sits on the floor, and no real document can
-reach GREEN. The detector is the single unblock for the whole extraction path.
+`ocr.run(ctx)` when `ctx.field_boxes` is non-empty. Before the weights arrived
+every declared text field emitted `inconclusive`, coverage sat on the floor, and
+no document could reach GREEN.
+
+Measured on 2026-09-09, the day it landed:
+
+- **Printed ink is read for the first time.** Fields now carry `source=ocr`
+  instead of `source=qr` or nothing at all, which is what makes the VIZ/MRZ
+  cross-check and Layer D's trust propagation compare a payload against *ink*
+  rather than against another payload.
+- **Aadhaar 6,596 → 481 ms p50, PAN 6,006 → 443 ms.** Both spent their entire
+  budget in the Florence-2 fallback, which no longer runs on them. Three of six
+  document types are now inside the 1,020 ms Tier 1 budget.
+- **Memory stops being a 1.5 GB story on the common path** — 170 MB warm, ~190 MB
+  working, with the fallback's 1.43 GB now reached only by the minority of runs
+  whose reading path fails.
+- **Scene 3, the headline demo, runs as scripted for the first time**
+  (`context/DEMO.md`, rehearsal record 2026-09-09).
+
+And one regression it introduced, found and fixed the same day: the
+fixed-position MRZ read was the `else` of `if ctx.field_boxes`, so a detector
+that located the name and missed the machine-readable zone *suppressed* the read
+that does not need it. The passport lost its five ICAO check digits and fell to
+the fallback — 9,654 ms, coverage 0.522. It is no longer an else-branch.
 
 ---
 

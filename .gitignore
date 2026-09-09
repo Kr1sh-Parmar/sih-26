@@ -42,3 +42,13 @@ runs/
 # Build-time downloads, not source. The shipped detector lives in models/.
 *.pt
 weights/
+
+# Real ID documents and live-face captures staged for manual testing outside
+# the calibration flow. CLAUDE.md rule 4: no real Aadhaar, PAN, passport,
+# Voter ID or DL image or number in any commit, ever. This directory exists
+# only on disk, for exactly this reason.
+real data fr testing/
+
+# Playwright MCP browser snapshots. Scratch output from driving the console
+# during development, not source and not worth a diff.
+.playwright-mcp/

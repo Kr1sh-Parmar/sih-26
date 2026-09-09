@@ -716,3 +716,198 @@ With no failures the finding is a pass and the strongest class present is the ho
 **Why it is not repaired into a real differentiation.** The obvious fix is to invert the thresholds so a signature buys benefit of the doubt in a 0.15–0.25 grey zone. That is refused on the strength of D48: a signature proves the payload and says nothing about the ink. Letting a verified signature buy a card *less* forensic scrutiny of its printing is precisely the assumption that let a retyped passport and a retyped Aadhaar through. Four of six Indian documents carry no signature at all, so the differentiation would also be a differentiation against the majority of what actually crosses the border.
 
 **What was removed:** the dead branch, and `tamper_escalate_above` from `config/thresholds.yaml`, which nothing else read. Behaviour is unchanged and a test pins it — a verified signature must produce the same escalation decision as no signature at every tamper level.
+
+---
+
+## D51 — The detector reads the documents it was trained on, and not the ones the demo uses
+
+**Decision:** ship the detector, quote both numbers, retrain nothing.
+
+`field_detector_22cls` landed from the external GPU box on 2026-09-09 and is deployed. Measured through the real screening path — the shipped int8 ONNX, `modules/extraction/detect.py`, letterboxing, NMS and all, by the new `data/tools/eval_detector.py`:
+
+```
+data/processed/fields/test       recall 0.926   (3788 / 4089 instances, 1012 images)
+data/processed/generated/*       recall 0.142   (197 / 1386, the domain the demo runs on)
+```
+
+The first number reproduces the sidecar's 0.906 and settles a question the sidecar cannot answer: the export, the quantisation and the decoder are correct end to end. A transposed head or a bad quantisation would have shown up here as a collapse, and did not.
+
+The second is a domain gap, and it is the honest headline. **There are zero generated cards in the training split** — the detector learned on Roboflow document photographs and the demo, the rehearsal and every screenshot run on `data/generator/` renders. Per document type on the generated set: passport 0.042, voter_id 0.051, dl 0.162, visa 0.136, pan 0.370.
+
+**It is not a framing or scale artefact.** Padding the card with background, upscaling, downscaling and recompressing were each tried; the best of them moved a generated passport from 3 located classes to 4. The appearance gap is real.
+
+**Why not retrain.** The fix is to mix generated cards into the training set and re-run on the GPU box, which is a handoff, not an afternoon here — and the moment generated cards are in training, 0.926 stops being a generalisation number and starts being a number about the generator. Quoting both, as they stand, says more. Recorded as a limit, not smoothed over.
+
+**What it costs the demo, stated plainly:** 2–4 fields located per generated card, coverage 0.47–0.73, and only the PAN clears the 0.70 floor to GREEN. The safety property is doing its job — nothing was read, so nothing disagreed, and that is AMBER (D9) — but the reading path is being judged on the domain it is weakest in.
+
+---
+
+## D52 — Active liveness is un-cut, using the eye cascade already in the box
+
+**Decision:** cut-list item 2 is built, with OpenCV's bundled Haar eye cascade and no new model or dependency.
+
+The blocker recorded in `context/PROGRESS.md` was never the algorithm — it was that a FaceMesh model plus its dependency puts `tests/test_offline.py` at risk, and that test is what keeps the whole offline claim honest. `haarcascade_eye_tree_eyeglasses.xml` ships *inside* the installed `cv2` wheel, so nothing is fetched and the offline gate is untouched by construction. It passes.
+
+`face.liveness.active` was already a registered signal id with a reliability weight of 0.80 and a hardcoded `inconclusive`; only the frame sequence and the detector were missing. `POST /screen` now takes an optional `live_frames` burst alongside `live`.
+
+**The failure direction that shaped the design.** A cascade that flickers on a *still* image reports a photograph as having blinked, which is the one direction this check must never fail in. Measured over eight frames of one static portrait with only JPEG and sensor noise between them:
+
+```
+face width  160 px    1/8, 0/8      flickers  -> phantom blink
+face width  210 px    8/8, 7/8, 0/8 flickers  -> phantom blink
+face width  320 px    8/8, 0/8      stable
+face width  480 px    8/8, 0/8      stable
+```
+
+So `MIN_FACE_PX = 320`, below which the answer is `inconclusive` and the evidence asks the traveller to step closer. A second guard requires the closed frames to form one continuous run bracketed by open ones, which is what a blink looks like and what scattered detector noise does not.
+
+**`fail` is not in this check's vocabulary.** People hold a stare, bursts are short, and the cascade loses eyes behind spectacles even in the `_eyeglasses` variant. A blink is positive evidence; its absence is `inconclusive` and the officer standing at the counter remains the check. That is also why un-cutting this does not weaken the cut-list answer — passive liveness still carries the load.
+
+**Ceiling, named:** a Haar cascade is a weaker eye detector than a six-point eye aspect ratio, and it degrades on spectacles. The upgrade path is MediaPipe FaceMesh landmarks and a real EAR, and it costs a model file, a dependency, and a re-run of the offline gate.
+
+**Not wired to the console, deliberately.** `Capture.tsx` navigates rather than posting, and `Screening.tsx` screens through `startReplay` against server-side fixtures — the console never sends a capture to `/screen` at all. Adding a burst recorder there would feed nothing. The transport half is covered by an API test instead, and the console work belongs with wiring capture to the backend, which is a separate change to the demo's spine.
+
+---
+
+## D53 — The fallback reader fires on a share of failed reads, not on any one
+
+**Decision:** Florence-2 fires when a third or more of the fields OCR *attempted* came back unreadable, not when any single one did.
+
+With no detector deployed the old trigger was harmless — nothing was ever located, so `nothing_located` fired and the share never mattered. With the detector deployed it became the dominant latency cost: one faint field beside three clean reads spent eight seconds and 1.4 GB re-reading fields already in hand. Measured, before and after, on the document type where it bit hardest:
+
+```
+driving licence   before   VLM fired 42% of runs   p95 6,167 ms   mean 2,777 ms
+                  after    VLM fired 17% of runs   p95 5,708 ms   mean 1,522 ms
+```
+
+The question the fallback answers is "did the reading path work on this document". One bad field out of several is not that. `nothing_located` is untouched and still fires unconditionally: a card the detector cannot see at all has no reading path to judge, and that is exactly when a reader needing no boxes earns its cost.
+
+The threshold lives in `config/thresholds.yaml` as `vlm.fallback_unread_frac`, beside the confidence floor it complements.
+
+
+---
+
+## D54 — The console screens the document the officer captured
+
+**Decision:** `Capture` hands a real capture to `Screening`, which posts it to `/screen`. The four rehearsed fixture scenes stay, and take over whenever there is no capture waiting.
+
+Until now the capture screen navigated and threw its bytes away: `Screening.tsx` chose one of four named fixtures and replayed it, locally or through the server-side `/screen/replay/{name}`. `startScreening` existed and nothing called it. So `POST /screen` — the endpoint the whole product is about — was reachable and unused, and the console could not screen a document that was not rehearsed in advance.
+
+**What was missing was not plumbing.** The capture screen had no document-type selector at all, and `/screen` requires one. `CLAUDE.md` and `_doctype()` both assume the officer selects the type at the counter — that is why automatic classification reports `not_applicable` rather than a confidence it has not earned — but nothing in the console ever asked. It does now, and it is the first control on the screen.
+
+**The handoff is consumed exactly once.** `store/capture.ts` exposes `take()`, which returns the capture and clears it in the same call; `Screening` parks the result in a ref so a re-render cannot re-consume it. A separate `reset()` would have left the door open to the failure this is built to prevent: a back-navigation re-screening the previous traveller's document and attaching their verdict to the person now at the counter. Four tests pin it.
+
+**The scene buttons are hidden while a capture is on screen**, and that is not cosmetic. The effect that screens a document is keyed on `scene`, so a click would have re-POSTed the officer's capture and billed a second screening for one traveller.
+
+**Fixtures are not dead code.** With no backend reachable the console still replays them, and `DEMO.md` keeps them as the backup path for the day the webcam fails in front of the panel. What changed is that a *real capture* in that situation now reports that it cannot be screened, rather than quietly showing a fixture verdict for a document the officer just took. Falling back silently was already called out as the dangerous outcome in `Screening.tsx`; this extends the same rule to captures.
+
+**The camera path photographs the card and the traveller separately, and that is not a UX preference.** The first draft reused the document frame as the live frame — at a counter one camera really does see a person holding their card, so it looked free. It would have been a guaranteed false match: `modules/face._locate` takes `largest(detect(image))` for *both* the document portrait and the live face, so one frame handed in twice makes it find the same face twice and return a cosine of 1.0. Evidence that is not independent of what it claims to prove, which is D48 in a different hat, and it would have cleared every impostor who could hold up someone else's card.
+
+So the camera source has two actions: photograph the document, then photograph the traveller. The blink burst — five frames at 280 ms (D52) — rides on the second, because it has to be frames of a face rather than of a card. `tests/test_face.py::test_one_frame_used_as_both_document_and_live_is_a_self_comparison` measures the 1.0 and exists so that the next person tempted to save a click finds the reason written down.
+
+Neither live capture is required. Without them the face comparison and the blink check report `inconclusive`, which is what a file upload produces and is the honest answer.
+
+---
+
+## D55 — The image is verified by running it, not by building it
+
+**Decision:** `docker compose --profile verify run --rm verify` is the gate that matters, and the Dockerfile asserts `import cv2` at build time so its own failure mode cannot recur silently.
+
+`sih-screening-api` had been built on this machine 40 hours before anyone ran it. A build succeeding proves that pip resolved a dependency tree; it proves nothing about whether the process starts. The first execution of the verify profile found four defects in the shipping artefact, none of them reachable from the host:
+
+**1. The image could not `import cv2`.** `requirements.txt` pins `opencv-python-headless` so that no X stack is needed — and `rapidocr-onnxruntime` declares a dependency on plain `opencv-python`, so pip installed both. They ship the same `cv2` module, the plain build landed last, and it needs `libGL.so.1`, which `python:3.11-slim` does not have. Every module in the screening path imports cv2, so the API could not have started.
+
+Fixed by uninstalling both and reinstalling headless. Uninstalling only the plain build is not enough: the two share files, so removing one leaves the other broken. `apt-get install libgl1` would also have worked and was rejected — it drags an X stack into a server image to satisfy a dependency declaration nothing here uses, and it would contradict the comment three lines above it. The build now ends in an explicit `import cv2`, so the image cannot be published in this state again.
+
+**2. `tests/test_generator.py` could not be collected.** It imports `DOC_TYPES` under `if HAVE_DEPS:` and then parametrises with it in a decorator. Decorators are evaluated at collection time and do not care that `pytestmark` is about to skip the module, so in an environment without the build-time dependencies — which the image deliberately is — the file raised `NameError` and took eleven other files down with it. It now falls back to `core.profiles.DOC_TYPES`, and a test asserts the two lists agree so the fallback cannot drift into testing a different set from the real one.
+
+**3. The console's build context ignored nothing.** `docker-compose.yml` builds the console with `context: ./frontend`, and Docker reads the `.dockerignore` at the root of the context it is given — not the one at the repository root. The root file lists `frontend/node_modules/`; it was never consulted for this image. So `COPY . .`, which runs *after* `npm ci`, copied the host's `node_modules` over the one the image had just installed: Windows binaries for esbuild and rollup, on Alpine. Fixed by adding `frontend/.dockerignore`.
+
+**4. `/screen/replay/{name}` could not work in the container.** `api/main.py:38` reads the four rehearsed signal sets from `frontend/src/fixtures/` at *run* time, and `.dockerignore` excluded `frontend/` wholesale. Every replay in the image failed with a `FileNotFoundError` — which is the endpoint the console's demo scenes drive, and the one DEMO.md's backup path depends on. 68 KB of JSON, now re-included by exception. They live under `frontend/` because the console's own local replay reads the same four files, and one copy both sides load beats two that can disagree about what GREEN looks like.
+
+**And a fifth thing, which is about the suite rather than the image.** That first run returned 24 failures, of which exactly one was a real bug. The rest were tests whose *inputs* are deliberately absent from the image — the generator's dependencies, the console's TypeScript sources, the training dataset — failing where they should have skipped. Noise on that scale hides the finding that matters, so the guards were fixed: `tests/conftest.py` now names what is missing, and `test_ratify`, `test_tamper` and `test_vlm` probe the *dependency* rather than the module.
+
+That last distinction was itself the bug. The generator imports Faker and Pillow inside its functions, to keep them out of the screening path's import graph — so `from data.generator import build` succeeds in the image and fails only when called. Every guard built on that import was reporting the generator as available in the one environment where it is not.
+
+`test_the_class_list_is_the_frozen_22_class_ontology_in_dataset_order` was split rather than skipped whole: the sidecar-against-ontology half needs nothing but the shipped artefact and must run inside the image, because a sidecar naming a class the ontology lacks mislabels fields in production. Only the dataset-order half, which needs training data, skips there.
+
+**Why this is a decision and not just five fixes.** All three are invisible on a developer machine, which has `libGL`, the build-time dependencies, and a `node_modules` that happens to match its own platform. A green suite on the host says nothing about the artefact that ships. The verify profile existed and had never been run; running it is now part of what "the container gate is closed" means, alongside `up` answering on `/health`.
+
+**The pip layer also got a BuildKit cache mount and longer retries.** That is about the connection this was built on rather than the dependency list — roughly 400 MB of wheels, and pip's defaults meant one dropped read nine minutes in discarded the whole layer and started from nothing. It happened twice before the mount went in. The cache lives outside the image, so nothing that ships is larger for it.
+
+---
+
+## D56 — The dependency set is pinned, because the tests and the artefact were not running the same code
+
+**Decision:** `numpy==1.26.4`, exactly, like every other line in `requirements.txt`. And detector coordinates are cast to `float` at the source.
+
+**The bug.** Screening any document the detector could actually read failed in the container with:
+
+```
+Screening failed: Object of type float32 is not JSON serializable
+```
+
+Not a degraded verdict — the websocket sent an `error` frame and the officer got nothing. It reproduced on every real document and on none of the tests.
+
+**Why the suite did not catch it.** Every socket test screened a blank or synthetic image. The detector finds nothing on those, so no signal carries a `region`, and the wire form is trivially serialisable. The one code path that emits coordinates was the one no test exercised over the socket.
+
+**Why it only appeared in the image.** `numpy>=1.26,<3` was the single range in a file of exact pins. This machine resolved **1.26.4**; the image resolved **2.4.6**. NumPy 2's NEP 50 keeps `float32` through a division by a Python float, where 1.x widened the result to `float64` — so in the image the letterbox arithmetic in `detect.py` returned `np.float32` scalars, they went into `Signal.region`, and `json.dumps` refused them. The host never saw it.
+
+That is the real finding, and it is larger than the crash: **a version range meant the suite and the shipping artefact were running different code.** A green suite proved nothing about the container. Pinning is not tidiness here; it is what makes the tests evidence.
+
+**Both halves are fixed, deliberately.** The pin makes the two environments agree; the `float(...)` cast in `modules/extraction/detect.py` makes the coordinates correct under either NumPy, because a signal's wire contract should not depend on a transitive dependency's promotion rules.
+
+**And the missing test now exists.** `test_every_event_from_a_real_document_survives_json` screens `gen_pan.png` over the real socket and asserts every event survives `json.dumps` and that region coordinates are plain floats. The contract it pins is that what the pipeline emits can be *sent* — which nothing asserted before.
+
+**Found by running the container**, like D55. Four bugs from building the image and one more from actually screening a document through it; none were visible from the host.
+
+---
+
+## D57 — The console screens what the officer captured, and shows it
+
+**Decision:** the capture path is wired end to end, session continuity is the officer's to break rather than a screen's, and the document viewer shows the actual capture.
+
+D54 wired `Capture` to post to `/screen`. Driving it in a browser found three things that made the difference between "the endpoint is reachable" and "the demo works".
+
+**1. Every capture minted a new session, which switched off the headline.** `Capture.submit()` called `startSession()` whenever its local document list looked empty — the normal state on that screen. So the second document of a session was screened against an empty set of priors, and cross-document trust propagation, the thing this system is *for*, silently did not happen. A session now ends when the officer says so: "New traveller" is that control, and it is the only thing that resets it.
+
+**2. The console refused documents the pipeline accepts.** `domain/quality.ts` gated resolution at a hard-coded 700 px short edge; `config/thresholds.yaml` sets `quality.min_short_edge_px: 600`. Every generated card is 1000x640, so the console showed "Move closer, or scan at a higher setting" and disabled the screen button on documents the backend screens without complaint. A gate stricter than the thing it guards adds no safety — it sends an officer to re-capture a document that was fine. Aligned, with a test.
+
+The number is still duplicated rather than fetched, and that is written down: `quality.doc_blur_min` (180) and the console's `SHARPNESS_MIN` (140) are already apart and were left alone, because the two are not measured on the same scale and matching the digits would be a guess dressed as a fix.
+
+**3. The viewer drew a passport while screening an Aadhaar.** `DocumentViewer` always rendered the hard-coded `<Specimen>`; `imageUrl()` existed in the transport and nothing called it. A real capture now shows itself, with the field overlays on top, and the caption distinguishes a capture from a replayed fixture. Fixtures keep the specimen, which is correct — there is no image to serve for one.
+
+**Measured in a browser, against the containers**, Aadhaar then PAN in one session:
+
+```
+aadhaar  SECONDARY  65% coverage  698 ms   signature verifies, own payload confirms name and DOB
+pan      CLEAR      83% coverage           3 cryptographic propagation findings
+session  2 documents, 3 propagation edges: name, dob, father_name - all "confirms"
+```
+
+That is Scene 3 running as written, from an upload, through the shipping container, to the officer's evidence list.
+
+---
+
+## D58 — The counter asks for the face; it does not offer it
+
+**Decision:** capture is a two-step flow. The document is accepted first, then the console *asks* for the traveller's photograph, and the screen button stays disabled until the officer either takes it or says out loud that there is nobody to photograph.
+
+The first wiring put "photograph the traveller" beside "photograph the document" as a second button, and only when the *document* source was Camera. Two things wrong with that. A document on the scanner glass could never carry a live face at all, which is the normal case at a counter — the card goes on the glass and the person is photographed by the camera on the post. And a check nobody is prompted to run is a check that does not happen: `face.match.cosine` would report `inconclusive` forever and the officer would never know a step had been skipped.
+
+So step two opens itself as soon as the document passes its quality gates, regardless of how the document arrived. The submit button reads "Photograph the traveller first" while it is pending.
+
+**Skipping is explicit and says what it costs.** "No traveller present — screen the document only" is a real option — a document handed over without its holder is a real situation — and choosing it prints that the comparison and the liveness check *will report that they could not run, which is not the same as passing*. The one thing not on offer is skipping it by accident.
+
+**Measured on a real document and a real person**, through the API with a live capture:
+
+```
+face.doc.detected     pass    186 px in the document photo
+face.live.detected    pass    177 px from the camera
+face.match.cosine     PASS    cosine 0.39 against the 0.32 threshold, 0.07 above
+                              evidence still carries "not yet calibrated"
+face.liveness.passive FAIL    0.29 - a live human read as a photograph
+face.liveness.active  inconc. 177 px, under the measured 320 px floor
+```
+
+Two of those are limitations worth carrying into any claim. **Passive liveness false-rejected a live person** on a laptop webcam, which is the direction that causes queues and teaches an officer to override the machine. And **the blink check cannot run at laptop-webcam distance** — 177 px against the 320 px floor D52 measured — so it declined rather than risk a phantom blink. That is the guard working, and it means the demo camera has to be closer or better than the one built into a laptop.

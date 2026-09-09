@@ -5,6 +5,13 @@ than quoted from the spec. Regenerate by running a document through
 `modules.extraction.vlm.generate` and timing it; the end-to-end figure comes
 from `api.router.screen` on a generated passport with no detector weights.
 
+**Dated 2026-09-07, and that date matters.** These are the numbers from when the
+fallback ran on nearly every document because nothing else could read one. With
+`field_detector_22cls` deployed the fallback is a minority path — Aadhaar, PAN
+and voter ID never reach it, passport/DL/visa do on 2/30, 2/12 and 1/12 runs.
+The per-read costs below are unchanged; what changed is how often they are paid.
+See the 2026-09-09 rows in the measurement log.
+
 Deployed by `python scripts/fetch_vlm_model.py` — build time only, four
 quantised ONNX graphs, 275 MB. Loaded **lazily**: it is the one model in the
 inventory not warmed at startup.
@@ -233,6 +240,15 @@ when it came back empty.
 | 2026-09-08 | Extraction stage p50 1,014 ms against a 250 ms budget, on the MRZ path alone. The cost is the untargeted read: `read_mrz` gets the bottom quarter of the page, not a crop |
 | 2026-09-08 | The ratifier's signals carry no `latency_ms`, so the per-stage extraction row understates the VLM path by three orders of magnitude. Trust the end-to-end row on aadhaar and pan |
 | 2026-09-08 | Memory measured (`scripts/measure_memory.py`): 154 MB warm and idle, 185 MB working on the MRZ path, **1,556 MB once Florence-2 loads**. DEMO.md's "under 500 MB warm" corrected |
+| 2026-09-09 | **The 2026-09-08 rows above are the detector-less floor, not the shipping number.** `field_detector_22cls` deployed; every row below is re-measured with it |
+| 2026-09-09 | Detector recall through the real screening path (`data/tools/eval_detector.py`, shipped int8 ONNX, IoU 0.5): **0.926 on `data/processed/fields/test`** (3788/4089, 1012 images), **0.142 on `data/processed/generated/*`** (197/1386). Zero generated cards in training — domain gap, D51 |
+| 2026-09-09 | The 0.926 reproduces the sidecar's 0.906 and settles the export: letterboxing, NMS, int8 quantisation and the YOLO head decode are correct end to end. A transposed head would have collapsed here |
+| 2026-09-09 | Not a framing artefact: padding with background, 2x upscale, 0.5x downscale and JPEG q60 each tried on a generated passport. Best moved 3 located classes to 4 |
+| 2026-09-09 | **Regression found and fixed.** `_mrz_from_its_fixed_position` was the `else` of `if ctx.field_boxes`, so a detector that located the name and missed the MRZ suppressed the fixed-position read entirely. Passport lost its five ICAO check digits and fell to Florence-2: **9,654 ms, coverage 0.522**. After: **3,684 ms, coverage 0.619**, MRZ read. Visa likewise, coverage 0.333 → 0.465 |
+| 2026-09-09 | Latency re-measured, detector deployed. passport p50 2,251 / p95 7,130 (n=30); aadhaar **481 / 555**; pan **443 / 478**; voter_id **483 / 509**; dl 551 / 5,708; visa 1,238 / 1,306 (n=12 each). **Three of six inside the 1,020 ms budget**; aadhaar and pan improved by more than an order of magnitude |
+| 2026-09-09 | The passport p50 rose (1,352 → 2,251) because it now pays for detection and OCR crops it previously skipped. Extraction p50 1,077 ms of it is the untargeted MRZ band read — still the identified next optimisation, not attempted because the crop is what the read accuracy rests on |
+| 2026-09-09 | VLM fallback re-gated on the *share* of attempted reads that failed rather than any single one (D53). Driving licence: fired 42% → 17% of runs, p95 6,167 → 5,708 ms, mean 2,777 → 1,522 ms |
+| 2026-09-09 | Memory re-measured: **170 MB warm and idle** (detector adds 16 MB), ~190 MB working with no fallback, **1,428 MB once Florence-2 loads**, peak 1,997 MB. Bimodal and one-way — sessions are cached for process lifetime. Aadhaar, PAN and voter ID never load it now; passport/dl/visa do on 2/30, 2/12 and 1/12 runs |
 
 ### Measured, and the ceiling
 
