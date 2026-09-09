@@ -24,7 +24,7 @@ the documents that have no MRZ - and stands down on the ones that do (D45).
 import time
 
 from core.canonical import FIELD_ORDER
-from core.profiles import field_label
+from core.profiles import field_label, load_config
 from core.quality import check as quality_check
 from core.registry import FIELD_DETECTOR, available
 from fusion.context import NormalizedField, ScreeningContext
@@ -117,8 +117,14 @@ def run(ctx: ScreeningContext, *, uploaded: bool = False,
     signals += detect.run(ctx)
     if ctx.field_boxes:
         signals += ocr.run(ctx)
-    else:
-        signals += _mrz_from_its_fixed_position(ctx)
+    # Independent of what the detector located, not an else-branch. The detector
+    # locates the machine-readable zone on some passports and not others; when it
+    # misses, `ctx.field_boxes` is still non-empty because it found the name, and
+    # gating this on emptiness cost the passport its five ICAO check digits and
+    # dropped it into the eight-second fallback instead. The zone's position is
+    # fixed by standard - it is readable whether or not a learned model proposed
+    # a box for it. Self-guards on `mrz` already being read.
+    signals += _mrz_from_its_fixed_position(ctx)
 
     signals += _fallback(ctx, signals)
     signals += _unread_fields(ctx)
@@ -135,12 +141,21 @@ MRZ_BAND_TOP = 0.75
 def _mrz_from_its_fixed_position(ctx: ScreeningContext) -> list[Signal]:
     """Read the MRZ without a detector, from where the standard says it is.
 
-    This exists because the detector is the long pole: it is training on a GPU
-    elsewhere, and until it lands `ctx.field_boxes` is empty and nothing is read
-    off any document. But the MRZ does not need a learned detector to be found -
-    ICAO fixes it at the bottom of the page - and it is the single most valuable
-    field on a passport, because it is the only one on any of these six document
-    types whose correctness is verifiable arithmetically.
+    This was written because the detector was the long pole - it trained on a
+    GPU elsewhere, and until it landed `ctx.field_boxes` was empty and nothing
+    was read off any document. The detector is deployed now and this path still
+    runs, because the reason it is good was never the detector's absence: the
+    MRZ does not need a learned detector to be found - ICAO fixes it at the
+    bottom of the page - and it is the single most valuable field on a passport,
+    because it is the only one on any of these six document types whose
+    correctness is verifiable arithmetically.
+
+    Measured, and this is why it is no longer an else-branch: the deployed
+    detector proposes an `mrz` box on 70% of the passports in its own test split
+    and on none of the generated renders. Gating this on `field_boxes` being
+    empty meant a detector that found the name and missed the zone took the
+    passport's five ICAO check digits away and dropped it into the eight-second
+    fallback instead.
 
     Reading it here switches on all five ICAO check digits in Layer A and the
     whole VIZ/MRZ cross-check in Layer C, both already written and tested.
@@ -161,10 +176,11 @@ def _mrz_from_its_fixed_position(ctx: ScreeningContext) -> list[Signal]:
 
     The cost is stated plainly: **this path can confirm a good machine-readable
     zone and can never report a tampered one.** That is a real loss, and it is
-    smaller than the alternative, because without a detector nothing was read at
-    all. It changes when the detector lands: a tight crop is a different accuracy
-    regime, and `_read_mrz_field` - the detector-fed path - deliberately keeps
-    the geometry gate alone so that forgery detection survives there.
+    smaller than the alternative, because the zone would otherwise not be read
+    at all. That cost is only paid on this path: `_read_mrz_field` - the
+    detector-fed path, which runs whenever the detector does propose an `mrz`
+    box - is a tight crop and a different accuracy regime, and it deliberately
+    keeps the geometry gate alone so that forgery detection survives there.
     """
     if "mrz" not in ctx.profile["extract"]["detector_classes"]:
         return []
@@ -279,14 +295,26 @@ def _fallback(ctx: ScreeningContext, so_far: list[Signal]) -> list[Signal]:
     # No trailing dot on the prefix, deliberately: the contract guard in
     # tests/test_contracts.py scans the source for anything shaped like a signal
     # id, and a prefix ending in a dot reads as one that was never registered.
-    unread = [s for s in so_far
-              if s.id.startswith("extraction.ocr") and s.verdict == "inconclusive"]
-    if not (nothing_located or unread):
+    attempted = [s for s in so_far if s.id.startswith("extraction.ocr")]
+    unread = [s for s in attempted if s.verdict == "inconclusive"]
+
+    # A *share* of the attempted reads, not any single one. This fired on one
+    # faint field out of three read cleanly, and that cost eight seconds of
+    # Florence-2 and 1.4 GB resident to re-read fields already in hand -
+    # measured at 42% of driving-licence runs, which was most of what kept that
+    # document type over budget. The question the fallback answers is "did the
+    # reading path work on this document", and one bad field out of several is
+    # not that. `nothing_located` is untouched and still fires unconditionally:
+    # a card the detector cannot see at all has no reading path to judge.
+    share = len(unread) / len(attempted) if attempted else 0.0
+    floor = load_config("thresholds")["vlm"].get("fallback_unread_frac", 0.0)
+    if not (nothing_located or (unread and share >= floor)):
         return []
 
-    reason = ("nothing was located on the document - the field detector is not "
-              "deployed" if nothing_located else
-              f"{len(unread)} field(s) were located but could not be read")
+    reason = ("nothing was located on the document - the field detector found "
+              "no fields to read" if nothing_located else
+              f"{len(unread)} of {len(attempted)} located field(s) could not "
+              f"be read")
     return vlm.run(ctx, reason=reason)
 
 

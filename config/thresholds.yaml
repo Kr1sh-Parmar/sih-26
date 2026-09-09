@@ -125,3 +125,14 @@ vlm:
   # Fire when OCR read a field this faintly. Above `ocr.MIN_CONFIDENCE` (0.55)
   # the read is used as-is; below this the fallback is worth its 8 seconds.
   low_confidence_below: 0.55
+
+  # What share of the fields OCR actually attempted must come back unreadable
+  # before the fallback is worth its 8 seconds. This was effectively 0 - any
+  # single unread field fired it - which spent Florence-2 on documents that had
+  # been read perfectly well apart from one faint line. Measured at that
+  # setting: 42% of driving-licence runs fell through, p95 6,167 ms against a
+  # 1,020 ms budget. A third is "the reader is not working on this document"
+  # rather than "one field is smudged". A card where the detector located
+  # nothing at all still falls through unconditionally - see
+  # modules/extraction/__init__.py:_fallback.
+  fallback_unread_frac: 0.34

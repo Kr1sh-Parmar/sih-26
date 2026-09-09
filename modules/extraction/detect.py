@@ -105,12 +105,22 @@ def detect(image: np.ndarray, conf: float = CONF_THRESHOLD) -> list[dict]:
         x, y, bw, bh = rects[i]
         x1, y1 = (x - dx) / scale, (y - dy) / scale
         x2, y2 = (x + bw - dx) / scale, (y + bh - dy) / scale
+        # `float(...)` on every coordinate, and it is load-bearing rather than
+        # tidy. `rects` is float32 (the model's output dtype), and under NumPy 2
+        # NEP 50 a float32 divided by a Python float stays float32, where NumPy
+        # 1 widened it to float64. So these coordinates came out as np.float32
+        # scalars, went into `Signal.region`, and `json.dumps` refused them -
+        # every screening of a real document died with "Object of type float32
+        # is not JSON serializable" the moment the detector actually found
+        # something. It only showed up in the container, which resolved NumPy
+        # 2.4.6 while this machine had 1.26.4; requirements.txt now pins the
+        # version so the two cannot drift again.
         found.append({
             "class": names[int(class_ids[i])],
             "confidence": float(scores[i]),
             "box": (
-                max(0.0, min(x1, w)), max(0.0, min(y1, h)),
-                max(0.0, min(x2, w)), max(0.0, min(y2, h)),
+                float(max(0.0, min(x1, w))), float(max(0.0, min(y1, h))),
+                float(max(0.0, min(x2, w))), float(max(0.0, min(y2, h))),
             ),
         })
     return found
